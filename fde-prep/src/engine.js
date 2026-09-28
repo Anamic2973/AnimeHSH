@@ -102,6 +102,28 @@
     },
     text(b) { return el('section', 'block', head(b) + paras(b.body)); },
     callout(b) { return el('section', 'block callout', head(b) + paras(b.body)); },
+    // concept card: plain-English definition → why → how → example → pitfalls
+    concept(b) {
+      const row = (label, html) => html ? `<div class="c-row"><div class="c-label">${label}</div><div class="c-body">${html}</div></div>` : '';
+      const list = (xs, ordered) => xs && xs.length ? `<${ordered ? 'ol' : 'ul'}>` + xs.map(x => '<li>' + md(x) + '</li>').join('') + `</${ordered ? 'ol' : 'ul'}>` : '';
+      const s = el('section', 'block concept',
+        `<h3><span class="tag">${esc(b.tag || 'Concept')}</span>${md(b.h)}</h3>` +
+        row('What it is', b.what && paras(b.what)) +
+        row('Think of it as', b.analogy && paras(b.analogy)) +
+        row('Why it matters', b.why && paras(b.why)) +
+        row('How it works', Array.isArray(b.how) ? list(b.how, true) : b.how && paras(b.how)) +
+        row('Example', (b.example ? paras(b.example) : '') + (b.code ? '<pre class="code"><code></code></pre>' : '') + (b.table ? '<div class="table-wrap"><table><thead><tr>' + b.table.cols.map(c => '<th>' + md(c) + '</th>').join('') + '</tr></thead><tbody>' + b.table.rows.map(r => '<tr>' + r.map(c => '<td>' + md(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>' : '')) +
+        row('Watch out', list(b.pitfalls)));
+      if (b.code) $('pre.code code', s).textContent = b.code.replace(/^\n/, '');
+      return s;
+    },
+    glossary(b) {
+      return el('section', 'block', '<h3><span class="tag">Glossary</span>Key terms in this module</h3><div class="table-wrap"><table><thead><tr><th>Term</th><th>Plain-English meaning</th></tr></thead><tbody>' +
+        b.terms.map(([t, d]) => `<tr><td><b>${md(t)}</b></td><td>${md(d)}</td></tr>`).join('') + '</tbody></table></div>');
+    },
+    walkthrough(b) {
+      return el('section', 'block callout', head(b) + '<ol class="walk">' + b.steps.map(([t, d]) => `<li><b>${md(t)}</b><div>${paras(d)}</div></li>`).join('') + '</ol>');
+    },
     csnote(b) { return el('section', 'block csnote', '<h3><span class="tag">C# → Python</span></h3><ul>' + b.items.map(i => '<li>' + md(i) + '</li>').join('') + '</ul>'); },
     list(b) {
       const t = b.ordered ? 'ol' : 'ul';
@@ -109,7 +131,7 @@
     },
     code(b) {
       const s = el('section', 'block', head(b) + '<pre class="code"><code></code></pre>' + (b.note ? '<p class="small muted" style="margin-top:10px">' + md(b.note) + '</p>' : ''));
-      $('code', s).textContent = b.code.replace(/^\n/, '');
+      $('pre.code code', s).textContent = b.code.replace(/^\n/, '');
       return s;
     },
     table(b) {

@@ -10,7 +10,7 @@ ROOT = Path(__file__).parent
 SRC = ROOT / "src"
 
 TRACKS = [
-    ("track-a.js", "track-a-fde-core.html", "FDE Core Track", "A"),
+    ("track-a", "track-a-fde-core.html", "FDE Core Track", "A"),
     ("track-b.js", "track-b-dsa.html", "DSA Patterns Track", "B"),
     ("track-c.js", "track-c-system-design.html", "System Design Track", "C"),
 ]
@@ -21,7 +21,9 @@ def main() -> None:
     css = (SRC / "engine.css").read_text()
     engine = (SRC / "engine.js").read_text()
     for data_file, out, title, badge in TRACKS:
-        data = (SRC / data_file).read_text()
+        src = SRC / data_file
+        # a track may be one file or a directory of parts concatenated in name order
+        data = "\n".join(f.read_text() for f in sorted(src.glob("*.js"))) if src.is_dir() else src.read_text()
         html = (
             shell.replace("{{TITLE}}", title)
             .replace("{{BADGE}}", badge)

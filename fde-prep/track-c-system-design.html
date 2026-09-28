@@ -95,6 +95,15 @@ main { padding: 28px 32px 80px; max-width: 980px; width: 100%; outline: none; }
 .block li { margin: 4px 0; }
 .block.callout { background: var(--warn-soft); }
 .block.csnote { border-left: 4px solid var(--accent); }
+.block.concept h3 { margin-bottom: 12px; }
+.c-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 14px; padding: 10px 0; border-top: 1px solid var(--border); }
+.c-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding-top: 3px; }
+.c-body > * + * { margin-top: 10px; }
+.c-body p { margin: 0 0 8px; }
+.walk { padding-left: 22px; margin: 0; }
+.walk > li { margin: 0 0 12px; }
+.walk > li > div { margin-top: 4px; }
+@media (max-width: 600px) { .c-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 .hero { margin-bottom: 18px; }
 .hero .kicker { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 
@@ -1763,6 +1772,28 @@ flowchart LR
     },
     text(b) { return el('section', 'block', head(b) + paras(b.body)); },
     callout(b) { return el('section', 'block callout', head(b) + paras(b.body)); },
+    // concept card: plain-English definition → why → how → example → pitfalls
+    concept(b) {
+      const row = (label, html) => html ? `<div class="c-row"><div class="c-label">${label}</div><div class="c-body">${html}</div></div>` : '';
+      const list = (xs, ordered) => xs && xs.length ? `<${ordered ? 'ol' : 'ul'}>` + xs.map(x => '<li>' + md(x) + '</li>').join('') + `</${ordered ? 'ol' : 'ul'}>` : '';
+      const s = el('section', 'block concept',
+        `<h3><span class="tag">${esc(b.tag || 'Concept')}</span>${md(b.h)}</h3>` +
+        row('What it is', b.what && paras(b.what)) +
+        row('Think of it as', b.analogy && paras(b.analogy)) +
+        row('Why it matters', b.why && paras(b.why)) +
+        row('How it works', Array.isArray(b.how) ? list(b.how, true) : b.how && paras(b.how)) +
+        row('Example', (b.example ? paras(b.example) : '') + (b.code ? '<pre class="code"><code></code></pre>' : '') + (b.table ? '<div class="table-wrap"><table><thead><tr>' + b.table.cols.map(c => '<th>' + md(c) + '</th>').join('') + '</tr></thead><tbody>' + b.table.rows.map(r => '<tr>' + r.map(c => '<td>' + md(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>' : '')) +
+        row('Watch out', list(b.pitfalls)));
+      if (b.code) $('pre.code code', s).textContent = b.code.replace(/^\n/, '');
+      return s;
+    },
+    glossary(b) {
+      return el('section', 'block', '<h3><span class="tag">Glossary</span>Key terms in this module</h3><div class="table-wrap"><table><thead><tr><th>Term</th><th>Plain-English meaning</th></tr></thead><tbody>' +
+        b.terms.map(([t, d]) => `<tr><td><b>${md(t)}</b></td><td>${md(d)}</td></tr>`).join('') + '</tbody></table></div>');
+    },
+    walkthrough(b) {
+      return el('section', 'block callout', head(b) + '<ol class="walk">' + b.steps.map(([t, d]) => `<li><b>${md(t)}</b><div>${paras(d)}</div></li>`).join('') + '</ol>');
+    },
     csnote(b) { return el('section', 'block csnote', '<h3><span class="tag">C# → Python</span></h3><ul>' + b.items.map(i => '<li>' + md(i) + '</li>').join('') + '</ul>'); },
     list(b) {
       const t = b.ordered ? 'ol' : 'ul';
@@ -1770,7 +1801,7 @@ flowchart LR
     },
     code(b) {
       const s = el('section', 'block', head(b) + '<pre class="code"><code></code></pre>' + (b.note ? '<p class="small muted" style="margin-top:10px">' + md(b.note) + '</p>' : ''));
-      $('code', s).textContent = b.code.replace(/^\n/, '');
+      $('pre.code code', s).textContent = b.code.replace(/^\n/, '');
       return s;
     },
     table(b) {
