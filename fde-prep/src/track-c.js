@@ -1,0 +1,1476 @@
+/* Track C — System Design. Quiz tuple: [question, options, correctIndex, explanation]. */
+(function () {
+  let num = 0;
+  const G1 = 'Part 1 — Fundamentals', G2 = 'Part 2 — Classic designs', G3 = 'Part 3 — AI / LLM designs';
+
+  const fund = (title, summary, blocks) => { num += 1; return { id: 'c' + num, num, title, short: 'C' + num, group: G1, summary, kind: 'module', blocks }; };
+
+  const pacing = deeps => ({ type: 'table', h: '7 · 45-minute pacing guide', tag: 'Pacing', cols: ['Minutes', 'What you do'], rows: [
+    ['0–5', 'Clarifying questions; write functional + non-functional requirements on the board; agree scope'],
+    ['5–10', 'Capacity estimation — only the numbers that drive design decisions'],
+    ['10–20', 'High-level diagram, API, data model; walk one request end to end'],
+    ['20–35', 'Deep dives: ' + deeps.join('; ')],
+    ['35–42', 'Bottlenecks, failure modes, trade-offs; what breaks at 10× load'],
+    ['42–45', 'Recap the design against requirements; what you would build next']
+  ] });
+
+  // design(group, title, spec) → one module in the 8-step structure
+  const design = (group, title, s) => {
+    num += 1;
+    const blocks = [
+      { type: 'list', h: '1 · Clarifying questions', tag: 'Step 1', items: s.clarify },
+      { type: 'table', h: '1 · Requirements', tag: 'Step 1', cols: ['Functional', 'Non-functional'], rows: zip(s.fr, s.nfr) },
+      { type: 'list', h: '2 · Capacity estimation', tag: 'Step 2', items: s.est },
+      { type: 'visual', h: '3 · High-level architecture', tag: 'Step 3', mermaid: s.hld, caption: s.caption },
+      { type: 'code', h: '4 · API and data model', tag: 'Step 4', code: s.api },
+      { type: 'list', h: '5 · Deep dives', tag: 'Step 5', items: s.deep },
+      { type: 'list', h: '6 · Bottlenecks, trade-offs, failure modes', tag: 'Step 6', items: s.tradeoffs },
+      pacing(s.pace),
+      { type: 'callout', h: '8 · Practice — design this variant', tag: 'Step 8', body: s.variant + '\n\nPost your design to the tutor (requirements → estimate → diagram → API → deep dives → trade-offs). You get a senior-interviewer critique, a score out of 10, and what would raise it.' },
+      { type: 'quiz', h: 'Design quiz', qs: s.quiz }
+    ];
+    if (s.refs) blocks.push({ type: 'refs', items: s.refs });
+    return { id: 'c' + num, num, title, short: 'C' + num, group, summary: s.summary, kind: 'module', blocks };
+  };
+  function zip(a, b) {
+    const rows = [];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) rows.push([a[i] || '', b[i] || '']);
+    return rows;
+  }
+
+  const items = [
+    // ═════════════ PART 1 — FUNDAMENTALS
+    fund('Estimation, latency vs throughput, scalability', 'Back-of-the-envelope maths, the latency numbers every engineer should know, and how systems scale.', [
+      { type: 'visual', h: 'Scaling a web service step by step', tag: 'Visual', caption: 'Each step removes the current bottleneck. Stateless app servers are what make horizontal scaling possible.', mermaid: `
+flowchart LR
+  S1["1 server<br/>app + DB"] --> S2["Separate DB<br/>scale up"]
+  S2 --> S3["Load balancer +<br/>N stateless app servers"]
+  S3 --> S4["Cache + read replicas"]
+  S4 --> S5["CDN for static /<br/>media"]
+  S5 --> S6["Async queues +<br/>workers"]
+  S6 --> S7["Shard the DB /<br/>multi-region"]
+` },
+      { type: 'table', h: 'Latency numbers (orders of magnitude)', tag: 'Explain', cols: ['Operation', 'Approx. time'], rows: [
+        ['L1 cache reference', '~1 ns'], ['Main memory reference', '~100 ns'], ['Compress 1 KB (fast codec)', '~2 µs'], ['Read 1 MB sequentially from memory', '~3 µs'],
+        ['SSD random read', '~16–100 µs'], ['Round trip within a datacenter', '~0.5 ms'], ['Read 1 MB sequentially from SSD', '~50 µs – 1 ms'], ['Disk (HDD) seek', '~2–10 ms'],
+        ['Redis GET over the network', '~0.5–1 ms'], ['Postgres indexed lookup', '~1–5 ms'], ['Round trip US ↔ Europe', '~80–150 ms'], ['LLM first token (hosted API)', '~200 ms – 2 s']
+      ] },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**Estimation recipe:** DAU × actions per user per day ÷ 86,400 ≈ average QPS; peak ≈ 2–5× average. Storage = items/day × size × retention × replication.',
+        '**Handy numbers:** 1 day ≈ 86,400 s ≈ 10⁵ s. 1 M requests/day ≈ 12 QPS. 1 B/day ≈ 12k QPS. 2¹⁰ ≈ 10³, 2²⁰ ≈ 10⁶, 2³⁰ ≈ 10⁹.',
+        '**Latency vs throughput:** latency = time for one request; throughput = requests per second. Batching raises throughput and latency; parallelism raises throughput.',
+        '**Little\'s law:** concurrent requests in flight = throughput × latency. 1,000 QPS at 200 ms → ~200 concurrent requests → size pools accordingly.',
+        '**Tail latency:** report p50/p95/p99. With fan-out to 100 servers, the slowest one decides — p99 of each becomes the typical latency of the whole.',
+        '**Scale up vs out:** vertical is simple but capped; horizontal needs stateless services, shared state in stores, and partitioning for data.'
+      ] },
+      { type: 'code', h: 'Worked example — estimate a photo-sharing app', tag: 'Example', code: `
+DAU                      = 50 M
+uploads / user / day     = 0.2    -> 10 M photos/day
+avg photo (stored sizes) = 2 MB   -> 20 TB/day raw  (x3 replication = 60 TB/day)
+write QPS                = 10 M / 86,400      ≈ 115 /s   (peak ~ 500 /s)
+views / user / day       = 30     -> 1.5 B views/day
+read QPS                 = 1.5 B / 86,400     ≈ 17k /s   (peak ~ 50k /s)
+egress                   = 17k/s × 200 KB (thumbnail) ≈ 3.4 GB/s  -> CDN is mandatory
+5-year storage           = 20 TB × 365 × 5 ≈ 36 PB raw -> object storage + tiering
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Estimate QPS and 1-year storage for a service logging 5 KB events from 20 M devices every minute.',
+        'A service has 300 ms p50 and 4 s p99. What might cause it and why does it matter for fan-out?',
+        'You need 5,000 QPS and each request holds a DB connection for 20 ms. How many connections?'
+      ] },
+      { type: 'quiz', qs: [
+        ['1 billion requests per day is roughly…', ['1.2k QPS', '12k QPS', '120k QPS', '1.2M QPS'], 1, '10⁹ ÷ ~10⁵ s ≈ 10⁴.'],
+        ['Little\'s law: 2,000 QPS with 50 ms latency means about how many in-flight requests?', ['40', '100', '400', '2,000'], 1, 'L = λ × W = 2,000 × 0.05 = 100.'],
+        ['Why are stateless app servers important?', ['Faster CPUs', 'Any server can handle any request, so you can add/remove servers freely', 'Less code', 'Better SQL'], 1, 'Session state moves to a shared store (Redis/DB/JWT).'],
+        ['Which is slowest?', ['Memory reference', 'SSD random read', 'Datacenter round trip', 'Cross-continent round trip'], 3, '~100 ms vs ~0.5 ms in-DC.'],
+        ['Why report p99 rather than average latency?', ['It is easier', 'Averages hide the slow tail that many users (and fan-out requests) experience', 'SLAs forbid averages', 'It is always lower'], 1, 'Tail latency dominates user experience at scale.']
+      ] },
+      { type: 'refs', items: [['Jeff Dean — Latency numbers (visualised, Colin Scott)', 'https://colin-scott.github.io/personal_website/research/interactive_latency.html'], ['Dean & Barroso — The Tail at Scale', 'https://research.google/pubs/the-tail-at-scale/'], ['System Design Primer (GitHub, diagrams)', 'https://github.com/donnemartin/system-design-primer']] }
+    ]),
+
+    fund('Load balancing, CDN, consistent hashing', 'Distribute traffic across servers, push content to the edge, and map keys to nodes so resizing moves little data.', [
+      { type: 'visual', h: 'Consistent hashing ring with virtual nodes', tag: 'Visual', caption: 'Keys go to the first node clockwise. Adding a node moves only the keys between it and its predecessor (~1/N of keys). Virtual nodes smooth the distribution.', mermaid: `
+flowchart LR
+  K1(["key user:42<br/>hash = 17"]) -->|clockwise| A1["A#1 @ 20"]
+  K2(["key cart:9<br/>hash = 130"]) -->|clockwise| B2["B#2 @ 150"]
+  K3(["key img:7<br/>hash = 250"]) -->|clockwise| C1["C#1 @ 270"]
+  A1 --> B1["B#1 @ 90"] --> B2 --> A2["A#2 @ 200"] --> C1 --> C2["C#2 @ 330"] --> A1
+` },
+      { type: 'visual', h: 'Request path through LB and CDN', tag: 'Visual', mermaid: `
+flowchart LR
+  U["User"] --> DNS["GeoDNS"]
+  DNS --> CDN["CDN edge<br/>cache hit?"]
+  CDN -->|hit| U
+  CDN -->|miss| LB["L7 load balancer<br/>TLS, routing, health checks"]
+  LB --> S1["App 1"]
+  LB --> S2["App 2"]
+  LB --> S3["App 3"]
+  S1 & S2 & S3 --> ORG[("Origin storage / DB")]
+` },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**L4 vs L7:** L4 balances TCP/UDP connections (fast, protocol-agnostic); L7 understands HTTP (path/header routing, TLS termination, retries, canaries).',
+        '**Algorithms:** round robin, weighted, least connections, least response time, consistent hashing (sticky by key). Health checks remove bad nodes.',
+        '**Sticky sessions** are a smell — prefer stateless servers; use them only for connection-heavy protocols (WebSockets) or local caches.',
+        '**CDN:** pull (edge fetches on miss, TTL) vs push (you upload). Cache static assets and media; use versioned URLs (`app.3f2a.js`) instead of purging.',
+        '**Consistent hashing:** hash(key) and nodes onto a ring; adding/removing a node remaps ~K/N keys instead of almost all (as `hash % N` does). Virtual nodes fix uneven load and heterogeneous capacity.',
+        '**Global load balancing:** GeoDNS / anycast routes users to the nearest healthy region.'
+      ] },
+      { type: 'code', h: 'Worked example — consistent hashing with virtual nodes', tag: 'Example', code: `
+import bisect, hashlib
+
+class Ring:
+    def __init__(self, nodes: list[str], vnodes: int = 100):
+        self.ring: list[tuple[int, str]] = []
+        for n in nodes:
+            for v in range(vnodes):
+                self.ring.append((self._h(f"{n}#{v}"), n))
+        self.ring.sort()
+        self.keys = [h for h, _ in self.ring]
+
+    @staticmethod
+    def _h(s: str) -> int:
+        return int(hashlib.md5(s.encode()).hexdigest(), 16)
+
+    def node_for(self, key: str) -> str:
+        i = bisect.bisect(self.keys, self._h(key)) % len(self.ring)   # first vnode clockwise
+        return self.ring[i][1]
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Why does `hash(key) % N` cause a cache stampede when you add one cache server?',
+        'You deploy a new JS bundle but users still get the old one for hours. Why, and how do you fix it properly?',
+        'When would you pick an L4 load balancer over L7?'
+      ] },
+      { type: 'quiz', qs: [
+        ['Adding one node to a consistent-hash ring of N nodes moves roughly…', ['All keys', '1/N of the keys', 'Half the keys', 'No keys'], 1, 'Only keys between the new node and its predecessor move.'],
+        ['Purpose of virtual nodes?', ['Security', 'Even out key distribution and allow weighting by capacity', 'Replication only', 'Faster hashing'], 1, 'Many small arcs per server average out imbalance.'],
+        ['Which needs an L7 load balancer?', ['Routing /api to one pool and /static to another', 'Balancing raw TCP', 'UDP game traffic', 'None'], 0, 'Path-based routing requires HTTP awareness.'],
+        ['Best practice to update cached static assets?', ['Purge the CDN every deploy', 'Content-hashed file names with long TTLs', 'TTL = 0', 'Disable the CDN'], 1, 'New content gets a new URL; old URLs can be cached forever.'],
+        ['Least-connections balancing helps most when…', ['All requests take equal time', 'Request durations vary widely', 'There is one server', 'Using UDP'], 1, 'Round robin would pile long requests onto unlucky servers.']
+      ] },
+      { type: 'refs', items: [['Karger et al. — Consistent Hashing (original paper)', 'https://www.akamai.com/site/en/documents/research-paper/consistent-hashing-and-random-trees-distributed-caching-protocols-for-relieving-hot-spots-on-the-world-wide-web-technical-publication.pdf'], ['Cloudflare Learning — What is a CDN?', 'https://www.cloudflare.com/learning/cdn/what-is-a-cdn/'], ['NGINX — load balancing methods', 'https://docs.nginx.com/nginx/admin-guide/load-balancer/http-load-balancer/']] }
+    ]),
+
+    fund('Caching strategies and invalidation', 'Where to cache, which write policy, how to evict, and how to keep caches from lying or stampeding.', [
+      { type: 'visual', h: 'Cache-aside (lazy loading) read and write paths', tag: 'Visual', caption: 'The most common pattern: app owns the logic. On write, update the DB then DELETE the cache key (not update) to avoid races writing stale values.', mermaid: `
+sequenceDiagram
+  participant App
+  participant Cache as Redis
+  participant DB
+  App->>Cache: GET user:42
+  alt hit
+    Cache-->>App: value
+  else miss
+    Cache-->>App: nil
+    App->>DB: SELECT ... WHERE id=42
+    DB-->>App: row
+    App->>Cache: SET user:42 row EX 300
+  end
+  Note over App,DB: Write path
+  App->>DB: UPDATE users SET ... WHERE id=42
+  App->>Cache: DEL user:42
+` },
+      { type: 'table', h: 'Write policies', tag: 'Explain', cols: ['Policy', 'How', 'Good for', 'Risk'], rows: [
+        ['Cache-aside', 'App reads cache, falls back to DB, populates', 'General read-heavy', 'Stale reads until TTL / delete'],
+        ['Read-through', 'Cache library loads from DB on miss', 'Simpler app code', 'Same as above'],
+        ['Write-through', 'Write cache and DB synchronously', 'Read-after-write consistency', 'Higher write latency'],
+        ['Write-back (behind)', 'Write cache, flush to DB async', 'Write-heavy counters', 'Data loss on cache failure'],
+        ['Write-around', 'Write DB only; cache on read', 'Write-once, read-rarely data', 'First read is a miss']
+      ] },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**Layers:** browser → CDN → API gateway → app in-process (LRU) → distributed (Redis/Memcached) → DB buffer pool.',
+        '**Eviction:** LRU (recency), LFU (frequency), TTL. Set a TTL on everything as a safety net.',
+        '**Invalidation:** delete on write, TTL, event-driven (CDC from the DB publishes invalidations), versioned keys (`user:42:v7`).',
+        '**Stampede (thundering herd):** a hot key expires and 10k requests hit the DB. Fixes: request coalescing / single-flight lock, stale-while-revalidate, TTL jitter, pre-warming.',
+        '**Hot keys:** one key gets huge traffic → replicate it across shards (`key#1..#N`), or cache in-process.',
+        '**Negative caching:** cache "not found" briefly to stop repeated misses (and enumeration attacks) hammering the DB.'
+      ] },
+      { type: 'code', h: 'Worked example — cache-aside with single-flight and jittered TTL', tag: 'Example', code: `
+import asyncio, json, random
+
+_locks: dict[str, asyncio.Lock] = {}
+
+async def get_user(redis, db, user_id: int) -> dict | None:
+    key = f"user:{user_id}"
+    if (cached := await redis.get(key)) is not None:
+        return json.loads(cached)
+    lock = _locks.setdefault(key, asyncio.Lock())
+    async with lock:                                   # only one coroutine per key loads from DB
+        if (cached := await redis.get(key)) is not None:
+            return json.loads(cached)
+        row = await db.fetch_user(user_id)
+        ttl = 300 + random.randint(0, 60)              # jitter avoids synchronized expiry
+        await redis.set(key, json.dumps(row), ex=ttl if row else 30)   # short negative cache
+        return row
+`, note: 'The lock is per process; across many instances use a Redis lock (`SET key NX PX`) or stale-while-revalidate.' },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Why delete the cache key on write instead of setting the new value?',
+        'A celebrity\'s profile key receives 200k reads/s. Design around it.',
+        'Where would you cache LLM responses, and what is the cache key?'
+      ] },
+      { type: 'quiz', qs: [
+        ['Cache stampede mitigation?', ['Shorter TTLs', 'Request coalescing / locking + TTL jitter', 'More DB replicas only', 'Disable cache'], 1, 'Prevent many concurrent misses on the same key from all hitting the DB.'],
+        ['Write-back caching risk?', ['Slow writes', 'Losing writes that were not yet flushed if the cache fails', 'Stale reads', 'None'], 1, 'Acknowledged writes live only in cache until flushed.'],
+        ['Why delete rather than update the cache on writes?', ['Faster', 'Avoids races where an older value overwrites a newer one', 'Saves memory', 'Required by Redis'], 1, 'Two concurrent writers can set cache values in the opposite order of their DB commits.'],
+        ['Negative caching means…', ['Caching errors forever', 'Briefly caching "not found" results', 'Deleting cache entries', 'Caching negative numbers'], 1, 'Stops repeated misses from hammering the DB.'],
+        ['Which eviction policy suits "popular items stay popular"?', ['FIFO', 'LFU', 'Random', 'MRU'], 1, 'Frequency captures long-term popularity; LRU favours recent access.']
+      ] },
+      { type: 'refs', items: [['AWS — Caching best practices', 'https://aws.amazon.com/caching/best-practices/'], ['Facebook — Scaling Memcache (NSDI paper)', 'https://www.usenix.org/conference/nsdi13/technical-sessions/presentation/nishtala'], ['Redis docs — client-side caching', 'https://redis.io/docs/latest/develop/reference/client-side-caching/']] }
+    ]),
+
+    fund('Databases: SQL vs NoSQL, indexing, replication, sharding', 'Pick the data model, make reads fast with indexes, survive failures with replication, and scale writes with sharding.', [
+      { type: 'visual', h: 'Replication + sharding together', tag: 'Visual', caption: 'Each shard owns a key range/hash bucket; each shard has a leader for writes and followers for reads/failover.', mermaid: `
+flowchart TB
+  APP["App / router<br/>shard = hash(user_id) mod 3"] --> L1
+  APP --> L2
+  APP --> L3
+  subgraph Shard 1
+    L1["Leader"] --> F11["Follower"]
+    L1 --> F12["Follower"]
+  end
+  subgraph Shard 2
+    L2["Leader"] --> F21["Follower"]
+    L2 --> F22["Follower"]
+  end
+  subgraph Shard 3
+    L3["Leader"] --> F31["Follower"]
+    L3 --> F32["Follower"]
+  end
+` },
+      { type: 'table', h: 'SQL vs NoSQL', tag: 'Explain', cols: ['', 'Relational (Postgres, MySQL)', 'Key-value / wide-column (DynamoDB, Cassandra)', 'Document (MongoDB)'], rows: [
+        ['Model', 'Tables, joins, constraints', 'Partition key → items; query by key', 'JSON documents'],
+        ['Transactions', 'ACID, multi-row', 'Limited (single partition / conditional writes)', 'Multi-doc supported, costlier'],
+        ['Scaling writes', 'Vertical, then sharding (Citus, Vitess)', 'Horizontal by design', 'Horizontal sharding'],
+        ['Choose when', 'Complex queries, integrity, moderate scale', 'Massive scale, known access patterns', 'Flexible schema, nested data']
+      ] },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**Indexes:** B-tree (read-optimised, in-place updates: Postgres, MySQL) vs LSM tree (write-optimised: memtable → SSTables + compaction: Cassandra, RocksDB). Indexes speed reads and slow writes.',
+        '**Replication:** single-leader (simple, lag on followers), multi-leader (multi-region writes, conflicts), leaderless (Dynamo-style quorums).',
+        '**Replication lag anomalies:** read-your-writes (route the author\'s reads to the leader for a while), monotonic reads (stick a user to one replica).',
+        '**Sharding strategies:** range (good for scans, hot spots on recent keys), hash (even spread, no range scans), directory/lookup (flexible, extra hop). Choose the shard key from the dominant access pattern.',
+        '**Resharding:** use many logical shards mapped to fewer physical nodes, or consistent hashing, so you move shards, not rows.',
+        '**Cross-shard ops:** avoid joins across shards; denormalise; use sagas instead of distributed transactions when possible.'
+      ] },
+      { type: 'code', h: 'Worked example — DynamoDB-style single-table access pattern', tag: 'Example', code: `
+# Access patterns first, schema second
+# 1. get user profile                 PK = USER#42        SK = PROFILE
+# 2. list user's orders, newest first PK = USER#42        SK begins_with ORDER#  (SK = ORDER#2026-09-01T10:00#o-981)
+# 3. get order by id                  GSI1PK = ORDER#o-981
+
+PK            SK                              attrs
+USER#42       PROFILE                         name, email, tier
+USER#42       ORDER#2026-09-01T10:00#o-981    total, status, GSI1PK=ORDER#o-981
+USER#42       ORDER#2026-08-15T09:12#o-870    total, status, GSI1PK=ORDER#o-870
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Choose a shard key for a multi-tenant SaaS where some tenants are 1000× larger than others.',
+        'A user updates their profile and immediately sees the old version. Explain and fix.',
+        'When would you choose Cassandra over Postgres? Give a concrete workload.'
+      ] },
+      { type: 'quiz', qs: [
+        ['Which storage engine is write-optimised?', ['B-tree', 'LSM tree', 'Hash index', 'Bitmap'], 1, 'Sequential appends to memtable/SSTables; compaction later.'],
+        ['Range-based sharding on timestamp causes…', ['Even load', 'A hot shard receiving all new writes', 'No range scans', 'Data loss'], 1, 'All current writes land on the latest range.'],
+        ['Fix for read-your-writes with async replicas?', ['Bigger replicas', 'Route a user\'s reads to the leader shortly after they write (or track replication position)', 'Disable replication', 'Use UDP'], 1, 'Session-level consistency guarantee.'],
+        ['Hash sharding downside?', ['Hot spots', 'Efficient range queries across keys are lost', 'Uneven data', 'No replication'], 1, 'Adjacent keys land on different shards.'],
+        ['Multi-leader replication\'s main challenge?', ['Read latency', 'Write conflicts between leaders', 'No failover', 'Cannot index'], 1, 'Needs conflict resolution (LWW, CRDTs, app logic).']
+      ] },
+      { type: 'refs', items: [['Designing Data-Intensive Applications — author\'s site (free chapter summaries/talks)', 'https://dataintensive.net/'], ['PostgreSQL docs — High availability, load balancing and replication', 'https://www.postgresql.org/docs/current/high-availability.html'], ['AWS — DynamoDB partition key design', 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html']] }
+    ]),
+
+    fund('CAP, PACELC, consistency models', 'What you give up during partitions (CAP), what you trade the rest of the time (PACELC), and the spectrum of consistency guarantees.', [
+      { type: 'visual', h: 'PACELC decision', tag: 'Visual', caption: 'CAP only talks about partitions. PACELC adds the everyday trade-off: latency vs consistency.', mermaid: `
+flowchart TD
+  P{"Network partition?"} -->|yes| A{"Choose"}
+  A -->|Availability| PA["PA: serve possibly stale data<br/>Cassandra, DynamoDB default"]
+  A -->|Consistency| PC["PC: reject some requests<br/>Spanner, etcd, ZooKeeper"]
+  P -->|"no (Else)"| E{"Choose"}
+  E -->|Latency| EL["EL: async replication,<br/>local reads"]
+  E -->|Consistency| EC["EC: sync replication,<br/>quorum / leader reads"]
+` },
+      { type: 'table', h: 'Consistency models (strong → weak)', tag: 'Explain', cols: ['Model', 'Guarantee', 'Example use'], rows: [
+        ['Linearizable', 'Every read sees the latest write; ops appear instantaneous in real-time order', 'Locks, leader election, bank balances'],
+        ['Sequential', 'All nodes see the same order, not necessarily real-time', 'Replicated logs'],
+        ['Causal', 'Causally related ops seen in order (reply after post)', 'Comments, chat'],
+        ['Read-your-writes', 'A user sees their own writes', 'Profile edits'],
+        ['Monotonic reads', 'Never see time go backwards', 'Feeds'],
+        ['Eventual', 'Replicas converge if writes stop', 'Like counts, DNS']
+      ] },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**CAP:** during a network partition a distributed store must choose consistency (refuse some requests) or availability (answer with possibly stale data). "CA" is not a real choice for distributed systems.',
+        '**Quorums:** N replicas, write to W, read from R. If R + W > N, read and write sets overlap → you read the latest acknowledged write (with caveats: sloppy quorums, concurrent writes).',
+        '**Conflict resolution:** last-write-wins (simple, loses data), version vectors (detect concurrency), CRDTs (merge automatically: counters, sets).',
+        '**Consensus:** Raft/Paxos give linearizable replicated state (etcd, Consul, ZooKeeper) at the cost of a majority round trip per write.',
+        '**Pick per feature, not per system:** payments need strong; likes can be eventual. Say this explicitly in interviews.'
+      ] },
+      { type: 'code', h: 'Worked example — quorum arithmetic', tag: 'Example', code: `
+N = 3 replicas
+W = 2, R = 2  -> R + W = 4 > 3   strong-ish reads, tolerates 1 node down for reads and writes
+W = 1, R = 1  -> R + W = 2 <= 3  fastest, eventual; may read stale
+W = 3, R = 1  -> fast reads, any single node down blocks writes
+W = 1, R = 3  -> fast writes, any node down blocks reads
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Classify a shopping cart, an inventory counter for a flash sale, and a view counter by the consistency they need.',
+        'Why is DynamoDB described as PA/EL by default, and how do you get stronger reads?',
+        'Explain why R + W > N does not guarantee linearizability in all cases.'
+      ] },
+      { type: 'quiz', qs: [
+        ['With N = 5, which (W, R) guarantees overlap?', ['W=2, R=2', 'W=3, R=3', 'W=1, R=4', 'W=2, R=3'], 1, 'Need R + W > N: 3 + 3 = 6 > 5. (1+4 = 5 and 2+3 = 5 are not > 5.)'],
+        ['PACELC\'s "ELC" part describes…', ['Behaviour during partitions', 'The latency vs consistency trade-off when there is no partition', 'Encryption', 'Leader election'], 1, 'Else (no partition): Latency or Consistency.'],
+        ['Which data can safely be eventually consistent?', ['Account balance', 'Like count on a post', 'Seat reservation', 'Distributed lock'], 1, 'Brief staleness has no correctness impact.'],
+        ['Last-write-wins conflict resolution risk?', ['Slow reads', 'Silently discarding concurrent writes', 'Deadlocks', 'Higher cost'], 1, 'Clock skew can even drop the truly later write.'],
+        ['Which system provides linearizable writes via consensus?', ['Memcached', 'etcd (Raft)', 'CDN', 'S3 lifecycle rules'], 1, 'Majority agreement per write.']
+      ] },
+      { type: 'refs', items: [['Jepsen — consistency models map (diagram)', 'https://jepsen.io/consistency'], ['Daniel Abadi — PACELC paper', 'https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf'], ['Raft — interactive visualisation', 'https://raft.github.io/']] }
+    ]),
+
+    fund('Queues, event streaming, async processing', 'Decouple producers from consumers, absorb spikes, and process work reliably with the right delivery semantics.', [
+      { type: 'visual', h: 'Kafka-style log: partitions and consumer groups', tag: 'Visual', caption: 'Order is guaranteed only within a partition. Each partition is read by one consumer per group; groups read independently (fan-out).', mermaid: `
+flowchart LR
+  P1["Producer<br/>key = order_id"] --> T0["Partition 0"]
+  P1 --> T1["Partition 1"]
+  P1 --> T2["Partition 2"]
+  subgraph G1["Group: billing"]
+    C1["consumer 1"]
+    C2["consumer 2"]
+  end
+  subgraph G2["Group: analytics"]
+    C3["consumer 1"]
+  end
+  T0 --> C1
+  T1 --> C1
+  T2 --> C2
+  T0 --> C3
+  T1 --> C3
+  T2 --> C3
+` },
+      { type: 'table', h: 'Queue vs log', tag: 'Explain', cols: ['', 'Message queue (SQS, RabbitMQ)', 'Log / stream (Kafka, Kinesis, Pub/Sub)'], rows: [
+        ['Consumption', 'Message deleted after ack', 'Retained; consumers track offsets'],
+        ['Replay', 'No', 'Yes (reprocess from an offset)'],
+        ['Fan-out', 'Via topics/exchanges', 'Multiple consumer groups'],
+        ['Ordering', 'FIFO queues (limited throughput)', 'Per partition'],
+        ['Use for', 'Task distribution, jobs', 'Event sourcing, analytics, CDC, many subscribers']
+      ] },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**Delivery semantics:** at-most-once (may lose), at-least-once (may duplicate — the practical default), "exactly-once" = at-least-once + idempotent processing or transactional sinks.',
+        '**Idempotent consumers:** dedupe on message ID, upserts, or conditional writes.',
+        '**Backpressure:** bounded queues, consumer autoscaling on lag, shed or delay low-priority work.',
+        '**Retries & DLQ:** retry with backoff; after N failures move to a dead-letter queue with the error, alert, and a replay tool.',
+        '**Transactional outbox:** write the business row and an `outbox` row in one DB transaction; a relay publishes outbox rows to the broker. Solves "DB committed but event lost".',
+        '**Sagas:** long-running multi-service workflows as a sequence of local transactions with compensating actions (orchestrated or choreographed).'
+      ] },
+      { type: 'code', h: 'Worked example — transactional outbox', tag: 'Example', code: `
+BEGIN;
+  INSERT INTO orders (id, user_id, total, status) VALUES ('o-981', 42, 99.00, 'PLACED');
+  INSERT INTO outbox (id, topic, key, payload)
+  VALUES (gen_random_uuid(), 'order-events', 'o-981',
+          '{"type":"OrderPlaced","order_id":"o-981","total":99.00}');
+COMMIT;
+
+-- relay (or Debezium CDC) loop:
+SELECT * FROM outbox WHERE published_at IS NULL ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED;
+-- publish each to Kafka (key = order id keeps per-order ordering), then:
+UPDATE outbox SET published_at = now() WHERE id = ANY($1);
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'You need per-customer ordering but high throughput. How do you partition?',
+        'A consumer crashes after processing but before committing its offset. What happens and how do you make it safe?',
+        'Design retries for a webhook sender that calls customer endpoints which may be down for hours.'
+      ] },
+      { type: 'quiz', qs: [
+        ['Kafka guarantees ordering…', ['Globally', 'Within a partition', 'Per consumer group', 'Never'], 1, 'Choose the key so related events share a partition.'],
+        ['What turns at-least-once delivery into effectively-once processing?', ['Bigger brokers', 'Idempotent consumers (dedupe / upsert)', 'Shorter retention', 'More partitions'], 1, 'Duplicates then have no additional effect.'],
+        ['Problem solved by the transactional outbox?', ['Slow queries', 'Dual-write inconsistency between DB and message broker', 'Schema migrations', 'Hot partitions'], 1, 'One local transaction, then reliable relay.'],
+        ['Max parallel consumers in one group for a topic with 6 partitions?', ['Unlimited', '6', '3', '1'], 1, 'Extra consumers sit idle.'],
+        ['Where do poison messages go after max retries?', ['Deleted silently', 'Dead-letter queue with error context', 'Back to the front', 'Logged only'], 1, 'Keeps the main queue flowing and preserves the message for replay.']
+      ] },
+      { type: 'refs', items: [['Apache Kafka docs — introduction (partition diagrams)', 'https://kafka.apache.org/documentation/#introduction'], ['microservices.io — Transactional outbox', 'https://microservices.io/patterns/data/transactional-outbox.html'], ['microservices.io — Saga pattern', 'https://microservices.io/patterns/data/saga.html']] }
+    ]),
+
+    fund('API design (REST, gRPC, GraphQL), rate limiting', 'Choose the right API style, design resources and errors well, and protect services with rate limits.', [
+      { type: 'visual', h: 'Token bucket rate limiter', tag: 'Visual', caption: 'Bucket holds up to B tokens and refills at r tokens/s. Each request takes a token; empty bucket → 429. Allows bursts up to B, average rate r.', mermaid: `
+flowchart LR
+  R["refill r tokens/s"] --> B[("bucket<br/>capacity B")]
+  Q["request"] --> C{"tokens ≥ 1?"}
+  B -.-> C
+  C -->|yes: take 1| OK["forward to service"]
+  C -->|no| NO["429 Too Many Requests<br/>+ Retry-After"]
+` },
+      { type: 'table', h: 'REST vs gRPC vs GraphQL', tag: 'Explain', cols: ['', 'REST/JSON', 'gRPC', 'GraphQL'], rows: [
+        ['Best for', 'Public APIs, simple CRUD, caching', 'Internal service-to-service, streaming, low latency', 'Many client shapes, aggregating backends'],
+        ['Contract', 'OpenAPI', 'Protobuf (strict, codegen)', 'Schema + queries'],
+        ['Transport', 'HTTP/1.1 or 2', 'HTTP/2, binary', 'HTTP, usually POST'],
+        ['Caching', 'HTTP caches work', 'Custom', 'Harder (single endpoint)'],
+        ['Pitfalls', 'Over/under-fetching', 'Browser support needs a proxy', 'N+1 resolvers, query cost limits']
+      ] },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**REST resources:** nouns, plural (`/orders/{id}`), proper verbs and status codes (201 created, 202 accepted, 409 conflict, 422 validation, 429 rate limited).',
+        '**Pagination:** cursor-based for feeds and large tables; return `next_cursor`.',
+        '**Idempotency:** PUT/DELETE are idempotent by definition; make POST safe with `Idempotency-Key`.',
+        '**Versioning:** additive changes are non-breaking; breaking changes via `/v2` or header versioning with a deprecation window.',
+        '**Long operations:** return `202` + operation ID; client polls or receives a webhook.',
+        '**Rate limiting algorithms:** fixed window (simple, bursty at edges), sliding log (exact, memory-heavy), sliding window counter (approximate, cheap), token bucket (bursts + average), leaky bucket (smooth output).',
+        '**Where:** at the API gateway, per API key / user / IP / tenant; distributed state in Redis with atomic Lua scripts.'
+      ] },
+      { type: 'code', h: 'Worked example — token bucket in Redis (Lua for atomicity)', tag: 'Example', code: `
+-- KEYS[1] = bucket key, ARGV = capacity, refill_per_sec, now_ms
+local cap, rate, now = tonumber(ARGV[1]), tonumber(ARGV[2]), tonumber(ARGV[3])
+local b = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
+local tokens, ts = tonumber(b[1]) or cap, tonumber(b[2]) or now
+tokens = math.min(cap, tokens + (now - ts) / 1000 * rate)      -- refill since last call
+local allowed = tokens >= 1
+if allowed then tokens = tokens - 1 end
+redis.call('HSET', KEYS[1], 'tokens', tokens, 'ts', now)
+redis.call('PEXPIRE', KEYS[1], math.ceil(cap / rate * 1000))
+return allowed and 1 or 0
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Design the API for uploading a 5 GB file that may take hours to process.',
+        'Your public API must allow 100 req/min per key with bursts of 20. Which algorithm and why?',
+        'When would you choose gRPC over REST inside your platform?'
+      ] },
+      { type: 'quiz', qs: [
+        ['Status code for a request that is valid JSON but fails business validation?', ['400', '404', '422', '500'], 2, '422 Unprocessable Entity (400 for malformed requests).'],
+        ['Algorithm allowing bursts while enforcing an average rate?', ['Fixed window', 'Token bucket', 'Sliding log', 'Round robin'], 1, 'Capacity = burst, refill rate = average.'],
+        ['Fixed-window limiter weakness?', ['Memory', 'Up to 2× the limit at window boundaries', 'Too strict', 'Needs clocks'], 1, 'N requests at 0:59 and N at 1:00.'],
+        ['Why use a Lua script in Redis for the limiter?', ['Speed only', 'Read-modify-write must be atomic across concurrent requests', 'Redis requires it', 'Security'], 1, 'Prevents races between GET and SET.'],
+        ['GraphQL risk to guard against?', ['No schema', 'Expensive nested queries (need depth/cost limits) and N+1 resolvers', 'No JSON', 'No HTTPS'], 1, 'Use DataLoader batching and query cost analysis.']
+      ] },
+      { type: 'refs', items: [['Google Cloud — API design guide', 'https://cloud.google.com/apis/design'], ['Stripe blog — Scaling your API with rate limiters', 'https://stripe.com/blog/rate-limiters'], ['gRPC — core concepts', 'https://grpc.io/docs/what-is-grpc/core-concepts/']] }
+    ]),
+
+    fund('Storage, search indexes, observability, security & auth', 'Blob/object storage, inverted indexes, the three pillars of observability, and the security basics every design must mention.', [
+      { type: 'visual', h: 'Inverted index', tag: 'Visual', caption: 'Map each term to the documents (and positions) containing it. Queries intersect posting lists; BM25 ranks by term frequency and rarity.', mermaid: `
+flowchart LR
+  D1["doc1: refund policy for orders"] --> I
+  D2["doc2: order tracking help"] --> I
+  D3["doc3: refund status"] --> I
+  I["Tokenise, lowercase, stem"] --> T1["refund → doc1, doc3"]
+  I --> T2["order → doc1, doc2"]
+  I --> T3["status → doc3"]
+  I --> T4["track → doc2"]
+` },
+      { type: 'list', h: 'Core ideas', tag: 'Explain', items: [
+        '**Storage types:** block (EBS disks, databases), file (NFS/EFS, shared POSIX), object (S3/Blob: HTTP API, cheap, 11 nines durability, huge scale). Put blobs in object storage and metadata in a database.',
+        '**Object storage patterns:** pre-signed URLs for direct client upload/download, multipart upload for big files, lifecycle rules to cold tiers.',
+        '**Search:** inverted index (Elasticsearch/OpenSearch/Lucene) with BM25; shards for scale, replicas for availability; near-real-time refresh (~1 s). Feed it via CDC from the source of truth.',
+        '**Observability:** logs (events), metrics (aggregates: RED — rate, errors, duration; USE — utilisation, saturation, errors), traces (request path across services). Define SLIs and SLOs; alert on SLO burn rate.',
+        '**AuthN vs AuthZ:** authentication (who — OIDC/SAML, MFA) vs authorisation (what — RBAC/ABAC, policy engines like OPA). Services: mTLS or signed tokens.',
+        '**Data protection:** TLS in transit, encryption at rest with KMS-managed keys, secrets in a vault, least privilege IAM, audit logs, tenant isolation.'
+      ] },
+      { type: 'table', h: 'Security checklist to say in every design', tag: 'Explain', cols: ['Area', 'What to mention'], rows: [
+        ['Edge', 'TLS, WAF, rate limiting, DDoS protection'],
+        ['Identity', 'OIDC SSO for users, short-lived tokens, service identities'],
+        ['Authorisation', 'Checked server-side on every request, tenant ID in every query'],
+        ['Data', 'Encryption at rest (KMS), PII minimisation, retention, backups'],
+        ['Ops', 'Secrets manager, audit logs, least privilege, dependency scanning']
+      ] },
+      { type: 'code', h: 'Worked example — SLO and burn-rate alert', tag: 'Example', code: `
+SLI:  successful requests (non-5xx, < 800 ms) / total requests
+SLO:  99.9% over 30 days  -> error budget = 0.1% = ~43 minutes of full outage
+Alert (fast burn):  error rate over 1h > 14.4 × 0.1%  (budget gone in ~2 days)  -> page
+Alert (slow burn):  error rate over 6h >  6   × 0.1%                           -> ticket
+` },
+      { type: 'list', h: 'Practice questions', tag: 'Practice', ordered: true, items: [
+        'Users upload 2 GB videos. Design the upload path without routing bytes through your API servers.',
+        'Search results are 30 s stale after an update. Where could the lag be?',
+        'Define 3 SLIs for an LLM chat product.'
+      ] },
+      { type: 'quiz', qs: [
+        ['Best way for clients to upload large files to S3 securely?', ['Through your API server', 'Pre-signed URL (multipart for big files)', 'Public bucket', 'FTP'], 1, 'Bytes skip your servers; URL is scoped and time-limited.'],
+        ['Inverted index maps…', ['Documents → terms', 'Terms → documents (posting lists)', 'Users → permissions', 'Keys → shards'], 1, 'That is what makes full-text search fast.'],
+        ['RED metrics stand for…', ['Read, Execute, Delete', 'Rate, Errors, Duration', 'Replicas, Events, Disks', 'Requests, Egress, DNS'], 1, 'Standard for request-driven services.'],
+        ['Authorization answers…', ['Who are you?', 'What are you allowed to do?', 'Is TLS on?', 'Where is the data?'], 1, 'AuthN = identity; AuthZ = permissions.'],
+        ['SLO 99.9% monthly allows roughly how much downtime?', ['~4 min', '~43 min', '~7 h', '~3.6 days'], 1, '0.1% of 30 days ≈ 43 minutes.']
+      ] },
+      { type: 'refs', items: [['Elastic — how inverted indexes work', 'https://www.elastic.co/guide/en/elasticsearch/reference/current/documents-indices.html'], ['Google SRE workbook — alerting on SLOs', 'https://sre.google/workbook/alerting-on-slos/'], ['OWASP — ASVS / cheat sheets', 'https://cheatsheetseries.owasp.org/']] }
+    ]),
+
+    // ═════════════ PART 2 — CLASSIC DESIGNS
+    design(G2, 'URL shortener', {
+      summary: 'Create short links, redirect fast, track clicks. Read-heavy, simple — the interviewer will judge your rigour on key generation and scale.',
+      clarify: ['Custom aliases? Expiry? Analytics needed?', 'Read:write ratio and volume?', 'Can links be edited or deleted?', 'Latency target for redirects? Global users?'],
+      fr: ['Create short URL (optional alias, expiry)', 'Redirect short → long', 'Basic click analytics'], nfr: ['Redirect p99 < 50 ms', 'High availability (reads > writes)', 'Short codes unguessable-ish, never collide'],
+      est: ['100 M new URLs/month ≈ **40 writes/s**; 100:1 reads → **~4k redirects/s**, peak ~20k/s.', '5 years ≈ 6 B URLs × ~500 B ≈ **3 TB** — fits a sharded KV store easily.', 'Code length: 62⁷ ≈ 3.5 × 10¹² ≫ 6 × 10⁹ → **7 base62 chars**.', 'Cache hot 20% of links: ~20% of daily working set fits in tens of GB of Redis.'],
+      hld: `
+flowchart LR
+  U["Client"] --> CDN["CDN / edge<br/>cache 301/302"]
+  CDN --> LB["Load balancer"]
+  LB --> W["Write API"]
+  LB --> R["Redirect service"]
+  W --> KG["Key generator<br/>ID ranges per node"]
+  W --> DB[("KV store<br/>code → long_url")]
+  R --> C[("Redis cache")]
+  C -. miss .-> DB
+  R --> K[["Click events<br/>Kafka"]]
+  K --> A[("Analytics store<br/>ClickHouse")]
+`, caption: 'Redirect path never touches analytics synchronously — click events are fire-and-forget into a stream.',
+      api: `
+POST /v1/urls            {long_url, custom_alias?, expires_at?} -> 201 {code, short_url}
+GET  /{code}             -> 302 Location: long_url   (301 if analytics not needed; cached by browsers)
+GET  /v1/urls/{code}/stats -> {clicks, by_day[], by_country[]}
+
+urls:   code (PK, 7 chars) | long_url | owner_id | created_at | expires_at
+clicks: code | ts | country | referrer | user_agent_hash      (append-only, columnar)
+`,
+      deep: ['**Key generation:** (a) counter + base62 using pre-allocated ID ranges per server (from ZooKeeper/DB sequence) — no collisions, no coordination per request; obfuscate with a bijective shuffle so codes are not sequential. (b) hash(long_url) truncated → needs collision checks. (c) pre-generated key pool table. Prefer (a).', '**Redirect latency:** CDN/edge caching of redirects, Redis in front of the KV store, 302 vs 301 (301 is cached by browsers — faster but you lose click counts).', '**Analytics at scale:** async click events to Kafka → aggregate into a columnar store; never block the redirect.'],
+      tradeoffs: ['Hot links (viral): cache at edge; replicate hot keys.', 'Abuse: rate-limit creation, scan URLs against malware lists, allow takedowns.', 'Expiry: lazy check on read + background cleanup.', 'KV store choice: DynamoDB/Cassandra (simple key lookups, horizontal) vs Postgres (fine up to a few TB with sharding).', 'Failure: if the analytics pipeline is down, redirects must still work.'],
+      pace: ['key generation', 'redirect caching (301 vs 302)', 'analytics pipeline'],
+      variant: 'Design **Pastebin**: users paste text up to 10 MB, get a short link, optional expiry and private links. What changes compared with the URL shortener?',
+      quiz: [
+        ['Why prefer 302 over 301 when you need click analytics?', ['302 is faster', 'Browsers cache 301 permanently, so repeat clicks skip your servers', '301 is deprecated', 'SEO'], 1, 'Every 302 reaches you (or your edge) and can be counted.'],
+        ['Collision-free short code generation without per-request coordination?', ['Random + retry', 'Pre-allocated ID ranges per server, base62-encoded', 'MD5 of URL', 'UUID v4'], 1, 'Each server owns a range; no two servers issue the same ID.'],
+        ['How many base62 chars for ~6 B URLs with lots of headroom?', ['5', '6', '7', '10'], 2, '62⁶ ≈ 5.7 × 10¹⁰ is tight with obfuscation; 62⁷ ≈ 3.5 × 10¹² is comfortable.']
+      ]
+    }),
+
+    design(G2, 'Rate limiter', {
+      summary: 'A distributed rate-limiting service/middleware protecting APIs per user, key, IP or tenant.',
+      clarify: ['Client-side SDK or server-side middleware/gateway?', 'Limit dimensions: user, API key, IP, endpoint, tenant?', 'Hard vs soft limits? Different tiers?', 'Global limits across regions or per region?'],
+      fr: ['Allow/deny a request by rules', 'Configurable rules per key/endpoint/tier', 'Return 429 with Retry-After and limit headers'], nfr: ['Adds < 2 ms p99', 'Highly available — fail open (or closed for security-critical)', 'Accurate within a few %'],
+      est: ['Gateway at 50k req/s → 50k limiter checks/s.', '10 M active keys × ~100 B state ≈ **1 GB** in Redis.', 'One Redis round trip (~0.5 ms) per check; Redis cluster shards by key.'],
+      hld: `
+flowchart LR
+  C["Client"] --> GW["API gateway<br/>limiter middleware"]
+  GW --> RC{"local cache of<br/>rules"}
+  GW -->|"EVALSHA token bucket"| RD[("Redis cluster<br/>sharded by key")]
+  GW -->|allowed| S["Backend services"]
+  GW -->|denied| X["429 + Retry-After"]
+  CFG[("Rules config<br/>tiers, endpoints")] --> RC
+`, caption: 'Rules are cached locally; counters live in Redis and are updated atomically with a Lua script.',
+      api: `
+Rule:  {id, match: {api_key_tier: "free", route: "/v1/search"}, algo: "token_bucket",
+        capacity: 20, refill_per_sec: 1.67}
+Check: allow(key="free:key_123:/v1/search", cost=1) -> {allowed, remaining, reset_ms}
+Headers: X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After
+Redis: HASH rl:{key} -> tokens, ts   (TTL = time to refill fully)
+`,
+      deep: ['**Algorithm choice:** token bucket (bursts + average; default), sliding window counter (cheap, smooth), sliding log (exact, memory-heavy). Explain boundary burst of fixed windows.', '**Atomicity & distribution:** Lua script per key in Redis; shard keys with consistent hashing; for multi-region, either per-region limits (limit/N) or async sync of counts with slight over-admission.', '**Failure mode:** Redis unavailable → fail open with a local in-memory fallback limiter to avoid taking down the API; alert.'],
+      tradeoffs: ['Latency vs accuracy: local token buckets synced periodically are fast but approximate.', 'Hot keys (one tenant): shard that key\'s counter into N sub-counters.', 'Race conditions without atomic scripts → over-admission.', 'Fairness vs simplicity: per-tenant + global limits layered.', 'LLM APIs: limit by tokens, not requests (cost = tokens).'],
+      pace: ['algorithm choice with boundary cases', 'distributed atomic counters in Redis', 'fail-open vs fail-closed and multi-region'],
+      variant: 'Design a **rate limiter for an LLM API** where limits are in tokens per minute per tenant, cost is known only after the response streams, and bursts are expensive.',
+      quiz: [
+        ['Why do fixed windows allow up to 2× the limit?', ['Clock drift', 'Requests bunched at the end of one window and start of the next both pass', 'Redis bug', 'They don\'t'], 1, 'Sliding windows or token buckets fix this.'],
+        ['Redis down: most APIs should…', ['Reject all traffic', 'Fail open with a local fallback limiter and alert', 'Crash', 'Retry forever'], 1, 'Unless the limiter protects something security-critical (e.g. login brute force).'],
+        ['Rate limiting an LLM API is best measured in…', ['Requests', 'Tokens (input + output)', 'Bytes', 'Connections'], 1, 'Cost and capacity scale with tokens.']
+      ]
+    }),
+
+    design(G2, 'Key-value store', {
+      summary: 'A Dynamo-style distributed KV store: partitioning, replication, quorums, conflict handling and an LSM storage engine.',
+      clarify: ['Value size? Key count? Read/write ratio?', 'Consistency needed: strong or tunable?', 'Multi-region?', 'Operations: get/put/delete only, or ranges?'],
+      fr: ['put(key, value), get(key), delete(key)', 'Tunable consistency per request', 'Automatic rebalancing when nodes join/leave'], nfr: ['Always writable (high availability)', 'Horizontal scale to PBs', 'p99 < 10 ms single-key ops'],
+      est: ['1 B keys × 1 KB = **1 TB** × 3 replicas = 3 TB → e.g. 30 nodes × 100 GB.', '100k ops/s total → ~3.3k ops/s per node — comfortably within an SSD LSM engine.'],
+      hld: `
+flowchart LR
+  CL["Client"] --> CO["Coordinator node<br/>(any node)"]
+  CO -->|"N=3 replicas<br/>next 3 on ring"| N1["Node A"]
+  CO --> N2["Node B"]
+  CO --> N3["Node C"]
+  subgraph Each node
+    WAL["Commit log (WAL)"] --> MT["Memtable"]
+    MT -->|flush| SS["SSTables +<br/>bloom filters"]
+    SS --> CP["Compaction"]
+  end
+  N1 <-. gossip .-> N2
+  N2 <-. gossip .-> N3
+`, caption: 'Consistent hashing places keys; the coordinator replicates to N nodes and waits for W (writes) or R (reads) acks.',
+      api: `
+put(key, value, context?)  -> ack       # context carries the version vector read earlier
+get(key)                   -> [values], context   # may return siblings if concurrent writes
+delete(key)                -> ack       # tombstone, purged after gc_grace
+Config per request: consistency = ONE | QUORUM | ALL
+`,
+      deep: ['**Partitioning & replication:** consistent hashing with vnodes; replicate to the next N distinct physical nodes; preference list.', '**Consistency & conflicts:** quorums (R + W > N); version vectors to detect concurrent writes, return siblings or LWW; read repair; hinted handoff when a replica is down; Merkle-tree anti-entropy for background repair.', '**Storage engine:** WAL → memtable → SSTables; bloom filters to skip SSTables on reads; size-tiered vs leveled compaction (write vs read amplification).'],
+      tradeoffs: ['Sloppy quorums improve availability but weaken the R + W > N guarantee.', 'LWW is simple but loses concurrent updates; version vectors push complexity to clients.', 'Tombstones and compaction cause latency spikes if unmanaged.', 'Gossip-based membership converges eventually — brief routing inconsistency.', 'Multi-region: local quorums (LOCAL_QUORUM) for latency, async cross-region replication.'],
+      pace: ['partitioning + replication on the ring', 'quorums, version vectors, repair', 'LSM write/read path'],
+      variant: 'Design a **distributed cache** (like Memcached at Facebook scale) — no durability needed, but hot keys, cold-start, and cross-region invalidation matter.',
+      quiz: [
+        ['Hinted handoff does what?', ['Encrypts data', 'Another node temporarily stores writes for a down replica and hands them over later', 'Picks a leader', 'Compacts SSTables'], 1, 'Keeps writes available during short failures.'],
+        ['Bloom filters in an LSM engine…', ['Store values', 'Quickly say "key definitely not in this SSTable"', 'Replace indexes', 'Compress data'], 1, 'Avoid disk reads for absent keys (false positives possible, no false negatives).'],
+        ['Merkle trees are used for…', ['Routing', 'Efficiently finding which key ranges differ between replicas', 'Leader election', 'Caching'], 1, 'Compare hashes top-down; sync only differing ranges.']
+      ],
+      refs: [['Amazon Dynamo paper (2007)', 'https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf'], ['Apache Cassandra — architecture overview', 'https://cassandra.apache.org/doc/latest/cassandra/architecture/overview.html']]
+    }),
+
+    design(G2, 'Notification system', {
+      summary: 'Send push, SMS and email notifications reliably at scale, respecting user preferences and provider limits.',
+      clarify: ['Channels: push (iOS/Android), SMS, email, in-app?', 'Triggered by events, scheduled, or bulk campaigns?', 'Delivery guarantees? Latency for transactional vs marketing?', 'User preferences, quiet hours, localisation?'],
+      fr: ['Send notification via one or more channels', 'Templates + personalisation', 'User preferences / opt-out, quiet hours', 'Delivery status tracking'], nfr: ['Transactional (OTP) < 5 s end-to-end', 'No duplicates for the same event; at-least-once delivery attempt', 'Survive provider outages'],
+      est: ['10 M push + 5 M email + 1 M SMS per day ≈ **190/s avg**; campaigns spike to 50k/s.', 'Log per notification ~1 KB → 16 GB/day for status tracking.'],
+      hld: `
+flowchart LR
+  S["Services / events"] --> API["Notification API<br/>validate, idempotency key"]
+  API --> P["Preference +<br/>template service"]
+  P --> RL["Rate limit +<br/>dedupe"]
+  RL --> QP[["push queue"]]
+  RL --> QS[["sms queue"]]
+  RL --> QE[["email queue"]]
+  QP --> WP["Push workers"] --> APNS["APNs / FCM"]
+  QS --> WS["SMS workers"] --> TW["Twilio / fallback SMS provider"]
+  QE --> WE["Email workers"] --> SES["SES / SendGrid"]
+  WP & WS & WE --> LOG[("Delivery log")]
+  APNS & TW & SES -. callbacks .-> LOG
+`, caption: 'Separate queues per channel isolate slow providers; OTPs get a high-priority queue.',
+      api: `
+POST /v1/notifications
+  {idempotency_key, user_id, type: "order_shipped", channels?: ["push","email"],
+   data: {order_id, eta}, priority: "high"|"normal", send_at?}
+-> 202 {notification_id}
+
+user_prefs:    user_id | channel | type | enabled | quiet_hours | locale
+devices:       user_id | device_token | platform | last_seen
+notifications: id | user_id | type | channel | status | provider_msg_id | attempts | ts
+`,
+      deep: ['**Reliability:** at-least-once queues, idempotency key per (event, user, channel), retries with backoff, DLQ, provider failover (secondary SMS/email provider).', '**Preferences & fatigue:** opt-outs, quiet hours in the user\'s time zone, per-user frequency caps, digesting low-priority notifications.', '**Campaign fan-out:** batch job segments users → enqueues in chunks at a controlled rate (respect provider limits, avoid starving transactional queue via priorities).'],
+      tradeoffs: ['Push tokens go stale — prune on provider "unregistered" responses.', 'Exactly-once to the user is impossible; dedupe window on the provider message or app side.', 'Priority queues vs separate clusters for OTP traffic.', 'Cost: SMS is expensive — prefer push, fall back to SMS only for critical.', 'Compliance: unsubscribe links, consent records (GDPR, TCPA).'],
+      pace: ['reliability + dedupe', 'preferences, quiet hours, rate caps', 'bulk campaign fan-out vs transactional priority'],
+      variant: 'Design **in-app + push notifications for a collaboration tool** (mentions, comments) where users are often online on multiple devices — avoid notifying a device where the user just read it.',
+      quiz: [
+        ['Why separate queues per channel?', ['Cheaper', 'A slow/failed provider doesn\'t block other channels', 'Required by APNs', 'Ordering'], 1, 'Isolation of failure domains and independent scaling.'],
+        ['How to avoid sending the same OTP twice on retries?', ['Hope', 'Idempotency key per event/user/channel checked before send', 'Longer timeouts', 'Disable retries'], 1, 'Dedupe at the notification service layer.'],
+        ['Campaign of 20 M emails must not delay OTP SMS. Approach?', ['Send campaign first', 'Priority queues / separate worker pools and rate-controlled campaign enqueueing', 'Bigger servers', 'Batch OTPs'], 1, 'Protect the latency-sensitive path.']
+      ]
+    }),
+
+    design(G2, 'Chat app', {
+      summary: 'One-to-one and group messaging with online presence, delivery receipts and history (WhatsApp / Messenger).',
+      clarify: ['1:1 and groups? Max group size?', 'Media messages? End-to-end encryption?', 'Receipts (sent/delivered/read), typing, presence?', 'Message history retention, multi-device?'],
+      fr: ['Send/receive messages 1:1 and group (≤ 500)', 'Delivery + read receipts', 'Online presence', 'History sync across devices'], nfr: ['Delivery < 200 ms when online', 'No message loss, per-conversation ordering', 'Scale to 50 M DAU'],
+      est: ['50 M DAU × 40 messages/day = **2 B msgs/day ≈ 23k/s** avg, ~70k/s peak.', '~200 B/message → **400 GB/day** → ~150 TB/year (before replication).', 'Concurrent connections: ~20 M WebSockets → ~40 gateway servers at 500k conns each (tuned).'],
+      hld: `
+flowchart LR
+  A["Alice app"] <-->|WebSocket| G1["Gateway 1"]
+  B["Bob app"] <-->|WebSocket| G2["Gateway 2"]
+  G1 --> CS["Chat service<br/>assign seq, persist"]
+  CS --> DB[("Messages<br/>Cassandra: PK conversation_id,<br/>CK seq")]
+  CS --> SR[("Session registry<br/>user → gateway")]
+  CS --> BUS[["Pub/sub to gateways"]]
+  BUS --> G2
+  CS -->|"user offline"| PN["Push notification"]
+  G1 & G2 --> PR[("Presence<br/>Redis + TTL heartbeats")]
+`, caption: 'Gateways are stateful (connections); everything behind them is stateless. The session registry says which gateway holds each user.',
+      api: `
+WS client -> server: {type:"send", client_msg_id, conversation_id, body}
+WS server -> client: {type:"ack", client_msg_id, seq}  /  {type:"msg", conversation_id, seq, from, body}
+WS client -> server: {type:"read", conversation_id, up_to_seq}
+GET /v1/conversations/{id}/messages?before_seq=&limit=50   (history)
+
+messages: conversation_id (PK) | seq (CK) | sender_id | body | ts
+inbox:    user_id | conversation_id | last_read_seq | unread_count
+`,
+      deep: ['**Delivery path & ordering:** server assigns a per-conversation monotonically increasing `seq`; client dedupes by `client_msg_id`; gaps trigger a history fetch. Acks at each hop (sent, delivered, read).', '**Connection layer:** WebSocket gateways, heartbeats, session registry in Redis, reconnection with "sync since last seq", draining connections on deploy.', '**Groups & fan-out:** small groups: fan-out on write to each member\'s gateway/inbox; large groups/channels: fan-out on read.'],
+      tradeoffs: ['Presence at scale is expensive — send presence only to contacts in view, lazy/batched updates.', 'E2E encryption (Signal protocol) moves search and moderation to the client.', 'Cassandra partition per conversation can grow huge → bucket by time (conversation_id, month).', 'Multi-device: each device keeps its own cursor; server keeps per-device delivery state.', 'Gateway failure: clients reconnect elsewhere and resync — design for it as normal behaviour.'],
+      pace: ['message send path with seq + acks', 'WebSocket gateways + session registry', 'group fan-out and storage partitioning'],
+      variant: 'Design **Slack-style channels** with up to 100k members, threads and message search.',
+      quiz: [
+        ['How do you guarantee per-conversation ordering?', ['Client timestamps', 'Server-assigned monotonically increasing seq per conversation', 'Random IDs', 'Global lock'], 1, 'Client clocks are unreliable; seq also lets clients detect gaps.'],
+        ['Recipient offline — what happens?', ['Message dropped', 'Stored; push notification sent; delivered on reconnect via sync', 'Sender retries forever', 'Queue in gateway memory'], 1, 'Persistence first, then push.'],
+        ['Why a session registry?', ['Store messages', 'Know which gateway server holds a user\'s connection', 'Rate limiting', 'Auth'], 1, 'Routing messages to the right stateful gateway.']
+      ]
+    }),
+
+    design(G2, 'News feed', {
+      summary: 'Generate a personalised feed of posts from followed accounts (Twitter / Instagram / LinkedIn).',
+      clarify: ['Chronological or ranked?', 'Follow graph size, celebrities?', 'Media in posts? Real-time updates?', 'Latency target for feed load?'],
+      fr: ['Publish a post', 'Load home feed (paginated)', 'Follow/unfollow'], nfr: ['Feed load p99 < 300 ms', 'Post visible to followers within seconds', 'Scale to 300 M DAU'],
+      est: ['300 M DAU × 10 feed loads/day = 3 B/day ≈ **35k QPS** (peak ~100k).', 'Posts: 300 M × 0.5/day = 150 M/day ≈ 1.7k/s.', 'Fan-out on write: 1.7k posts/s × 200 avg followers ≈ **350k feed inserts/s**.', 'Feed cache: 300 M users × 500 post IDs × 8 B ≈ **1.2 TB** in Redis.'],
+      hld: `
+flowchart LR
+  AU["Author"] --> PS["Post service"]
+  PS --> PDB[("Posts DB")]
+  PS --> K[["post.created"]]
+  K --> FO["Fan-out workers"]
+  FO --> SG[("Social graph<br/>followers")]
+  FO --> FC[("Feed cache<br/>Redis ZSET per user")]
+  RD["Reader"] --> FS["Feed service"]
+  FS --> FC
+  FS -->|"merge celebrity posts<br/>at read time"| PDB
+  FS --> RK["Ranking model"]
+  FS --> HY["Hydrate posts, users,<br/>counts (cached)"]
+`, caption: 'Hybrid: push post IDs to normal followers\' feeds; pull celebrity posts at read time and merge.',
+      api: `
+POST /v1/posts              {text, media_ids[]} -> 201 {post_id}
+GET  /v1/feed?cursor=&limit=20 -> {items:[{post, author, counts}], next_cursor}
+POST /v1/users/{id}/follow
+
+posts:   post_id (snowflake, time-ordered) | author_id | text | media | created_at
+follows: follower_id | followee_id | created_at    (indexed both directions)
+feed:    Redis ZSET feed:{user_id}  score = post time / rank, member = post_id (cap 500)
+`,
+      deep: ['**Fan-out on write vs read:** push is fast to read but expensive for celebrities (millions of writes per post); pull is cheap to write but slow to read. Hybrid threshold (e.g. > 100k followers → pull).', '**Ranking:** candidate generation (followed + recommended) → lightweight model scoring (engagement probability) → diversity rules. Keep chronological fallback.', '**Hydration & caching:** feed stores IDs only; hydrate posts/users/counters from caches in batch (multi-get).'],
+      tradeoffs: ['Inactive users: don\'t fan out to users who haven\'t logged in for 30 days; rebuild on login.', 'Deletes/edits: store IDs so hydration reflects the latest; filter deleted at read.', 'Counters (likes) are eventually consistent — sharded counters.', 'Cache loss: rebuild feeds from the graph + posts (slow) — keep replicas.', 'Snowflake IDs give time ordering without a central sequence.'],
+      pace: ['fan-out strategy (push/pull/hybrid)', 'feed storage and pagination', 'ranking + hydration'],
+      variant: 'Design **LinkedIn\'s feed** where posts can be re-shared and commented on by your connections, and those interactions should surface the post to you.',
+      quiz: [
+        ['Main problem with pure fan-out on write?', ['Slow reads', 'Celebrities with millions of followers cause massive write storms', 'Needs SQL', 'Loses posts'], 1, 'Hence hybrid for high-follower accounts.'],
+        ['Why store post IDs (not full posts) in feed caches?', ['Security', 'Less memory and edits/deletes are reflected at hydration', 'Faster writes only', 'Ranking'], 1, 'Single source of truth for post content.'],
+        ['Feed pagination should use…', ['Offset', 'A cursor (last score/ID)', 'Page numbers', 'Random'], 1, 'New posts arriving would shift offsets and duplicate items.']
+      ]
+    }),
+
+    design(G2, 'Video streaming', {
+      summary: 'Upload, transcode, store and stream video at scale (YouTube / Netflix).',
+      clarify: ['Upload + watch, or watch only (Netflix)?', 'Live streaming or VOD?', 'Devices and network conditions?', 'Recommendations and comments in scope?'],
+      fr: ['Upload video', 'Transcode to multiple resolutions/codecs', 'Stream with adaptive bitrate', 'Metadata: title, views, thumbnails'], nfr: ['Playback start < 2 s, minimal rebuffering', 'Highly available, global', 'Cost-efficient storage and egress'],
+      est: ['500 k uploads/day × 300 MB = **150 TB/day raw**; transcoded renditions ~×2 → ~300 TB/day stored.', 'Views: 5 B/day × 5 min × ~3 Mbps ≈ very large egress → **CDN serves > 95%** of bytes.', 'Transcoding: 500 k × 10 min video ≈ 5 M minutes of video/day → thousands of parallel transcode workers.'],
+      hld: `
+flowchart LR
+  UP["Uploader"] -->|"pre-signed multipart"| RAW[("Object storage<br/>raw")]
+  RAW --> EV[["upload.completed"]]
+  EV --> ORC["Transcode orchestrator<br/>(DAG)"]
+  ORC --> SPL["Split into segments"]
+  SPL --> TW["Transcode workers<br/>240p … 4K, H.264/AV1"]
+  TW --> PKG["Package HLS/DASH<br/>+ manifests, thumbnails"]
+  PKG --> OUT[("Object storage<br/>renditions")]
+  OUT --> CDN["CDN"]
+  V["Viewer player<br/>ABR"] --> CDN
+  V --> API["Metadata API"] --> MDB[("Metadata DB")]
+`, caption: 'Parallel transcoding of segments; players pick bitrate per segment from the manifest (ABR).',
+      api: `
+POST /v1/videos                   -> {video_id, upload_urls[] (multipart, pre-signed)}
+POST /v1/videos/{id}/complete     -> 202 (triggers processing)
+GET  /v1/videos/{id}              -> {title, status, manifest_url, thumbnails}
+GET  {cdn}/v/{id}/master.m3u8     -> renditions; each -> segment list (2–6 s .ts/.m4s)
+
+videos: video_id | owner_id | title | status(UPLOADING|PROCESSING|READY|FAILED) | duration | created_at
+renditions: video_id | resolution | codec | bitrate | manifest_path
+`,
+      deep: ['**Upload path:** resumable multipart uploads direct to object storage; checksum; virus/content checks.', '**Transcoding pipeline:** DAG orchestrator splits video into segments processed in parallel, retries per segment, then stitches/packaging; priority for popular creators.', '**Delivery:** HLS/DASH manifests, adaptive bitrate on the client, multi-CDN, pre-positioning popular content (Netflix Open Connect-style caches in ISPs).'],
+      tradeoffs: ['Storage cost: encode long-tail videos in fewer renditions; on-demand transcode for rare formats.', 'AV1/HEVC save bandwidth but cost more CPU and device support varies.', 'View counts: approximate, aggregated asynchronously.', 'Live streaming changes everything: low-latency HLS, ingest servers, no time for heavy transcoding.', 'Failure: segment-level retries keep a transcoding failure from redoing the whole video.'],
+      pace: ['resumable upload path', 'parallel transcoding DAG', 'ABR + CDN delivery'],
+      variant: 'Design **live streaming (Twitch)**: 100k concurrent viewers per popular stream, < 5 s glass-to-glass latency, chat alongside.',
+      quiz: [
+        ['Adaptive bitrate streaming means…', ['One file per video', 'The player switches between renditions per segment based on bandwidth', 'Server picks one bitrate forever', 'Always 4K'], 1, 'Segments + manifests enable switching.'],
+        ['Why split videos into segments for transcoding?', ['Smaller storage', 'Parallelism and per-segment retries', 'DRM', 'SEO'], 1, 'A 2-hour video transcodes in minutes across many workers.'],
+        ['Who serves the video bytes to viewers?', ['Your API servers', 'CDN edges (from object storage origin)', 'The metadata DB', 'Uploaders'], 1, 'Egress volume makes CDN mandatory.']
+      ]
+    }),
+
+    design(G2, 'File storage (Google Drive)', {
+      summary: 'Upload, sync, share and version files across devices (Google Drive / Dropbox).',
+      clarify: ['Max file size? Number of users?', 'Real-time collaborative editing in scope? (Usually no — that is Google Docs)', 'Sharing and permissions model?', 'Versioning and offline edits?'],
+      fr: ['Upload/download files', 'Sync across devices', 'Share with users/links, permissions', 'Version history'], nfr: ['Durability 11 nines', 'Sync latency seconds', 'Bandwidth-efficient (only changed parts)'],
+      est: ['50 M DAU, 500 M total users × 10 GB quota (avg 2 GB used) ≈ **1 EB allocated / 1 PB-scale actively used** — object storage.', 'Uploads: 50 M × 2 files/day ≈ 1.2k files/s.', 'Chunks of 4 MB; dedupe by chunk hash saves 20–50% on common files.'],
+      hld: `
+flowchart LR
+  CL["Desktop/mobile client<br/>watcher, chunker, local DB"] --> API["Metadata API"]
+  CL -->|"upload missing chunks<br/>pre-signed"| BS[("Block storage<br/>S3, key = chunk hash")]
+  API --> MD[("Metadata DB<br/>files, versions, chunks, ACLs")]
+  API --> NQ[["Change events"]]
+  NQ --> NT["Notification service<br/>long-poll / WebSocket"]
+  NT --> CL2["Other devices"]
+  CL2 -->|"fetch changes since cursor"| API
+  CL2 --> BS
+`, caption: 'Files are manifests of content-addressed chunks. Only changed chunks upload; other devices pull the new manifest.',
+      api: `
+POST /v1/files/{id}/versions {base_version, chunks:[hash...]} -> {missing:[hash...], upload_urls}
+POST /v1/files/{id}/commit   {version}                   -> 200 | 409 conflict
+GET  /v1/changes?cursor=     -> {changes:[{file_id, version, op}], next_cursor}
+POST /v1/files/{id}/share    {principal, role: viewer|editor}
+
+files:    file_id | owner_id | parent_id | name | latest_version | deleted
+versions: file_id | version | chunk_hashes[] | size | author | created_at
+chunks:   hash (PK) | size | ref_count | storage_key
+acl:      resource_id | principal | role
+`,
+      deep: ['**Chunking & dedupe:** fixed 4 MB or content-defined chunking (rolling hash) so an insert doesn\'t shift every chunk; upload only missing chunks.', '**Sync protocol:** per-user change log with cursors; notification service tells clients "something changed"; clients pull changes; offline edits reconciled on reconnect.', '**Conflicts:** optimistic concurrency via `base_version`; on conflict keep both ("conflicted copy") rather than silently merging binaries.'],
+      tradeoffs: ['Metadata DB is the hard part: shard by user/namespace; strong consistency within a namespace.', 'Garbage collection of unreferenced chunks (ref counts, delayed deletion for undo).', 'Encryption at rest per chunk; dedupe across users leaks information → dedupe per user or convergent encryption trade-off.', 'Large shared folders: permission checks and change fan-out.', 'Cold storage tiering for old versions.'],
+      pace: ['chunking + dedupe + upload path', 'sync protocol with change cursors', 'conflict handling + metadata sharding'],
+      variant: 'Design **photo backup (Google Photos)**: automatic upload from phones on Wi-Fi, dedupe of identical photos, search by content.',
+      quiz: [
+        ['Why content-defined chunking over fixed-size?', ['Faster hashing', 'An insertion early in a file doesn\'t change every later chunk boundary', 'Smaller metadata', 'Encryption'], 1, 'Rolling-hash boundaries stay aligned to content.'],
+        ['Two devices edited the same file offline. Safest default?', ['Last write wins silently', 'Detect via base version and keep both copies', 'Merge bytes', 'Reject both'], 1, 'Never lose user data.'],
+        ['What travels through the notification channel?', ['File bytes', 'A signal that changes exist; clients then pull metadata/chunks', 'Passwords', 'Nothing'], 1, 'Keeps the push channel lightweight.']
+      ]
+    }),
+
+    design(G2, 'Web crawler', {
+      summary: 'Crawl billions of pages politely, dedupe content, and feed a search index.',
+      clarify: ['Purpose: search indexing, archiving, monitoring?', 'Scale: pages per month? Freshness?', 'HTML only or also media? JavaScript rendering?', 'Politeness and robots.txt requirements?'],
+      fr: ['Fetch pages from seed URLs, extract links, repeat', 'Respect robots.txt and per-host rate limits', 'Dedupe URLs and near-duplicate content', 'Store pages for indexing'], nfr: ['1 B pages/month', 'Polite: ≤ 1 req/s per host by default', 'Robust to traps and malformed pages'],
+      est: ['1 B pages / 30 days ≈ **400 pages/s** avg (plan for 1k/s).', '100 KB avg HTML → **100 TB/month** raw (compress ~5×).', 'URL frontier: tens of billions of URLs → disk-backed queues; URL-seen set via bloom filter (~1% FP) ≈ 10 bits/URL → 12 GB per 10 B URLs.'],
+      hld: `
+flowchart LR
+  SEED["Seed URLs"] --> FR["URL frontier<br/>priority queues → per-host queues"]
+  FR --> FE["Fetchers<br/>async HTTP, robots cache"]
+  FE --> DNS["DNS cache"]
+  FE --> ST[("Raw page store")]
+  FE --> PA["Parser<br/>extract links + text"]
+  PA --> CD{"content seen?<br/>SimHash"}
+  CD -->|new| IDX[["To indexer"]]
+  PA --> UF["URL filter + normalise"]
+  UF --> US{"URL seen?<br/>bloom filter"}
+  US -->|new| FR
+`, caption: 'The frontier enforces politeness (one queue per host with a next-allowed-time) and priority (PageRank, freshness).',
+      api: `
+Frontier entry: {url, host, priority, depth, discovered_at}
+Host state:     {host, robots_rules, crawl_delay, next_fetch_at, error_rate}
+Page record:    {url, fetch_time, status, content_hash, simhash, outlinks[], storage_key}
+`,
+      deep: ['**Frontier & politeness:** front queues by priority, back queues one-per-host; a heap of (next_fetch_at, host) picks the next host ready to fetch.', '**Dedupe:** normalise URLs (lowercase host, strip fragments/tracking params); bloom filter for seen URLs; SimHash / MinHash for near-duplicate content.', '**Distribution:** partition hosts across crawler nodes by hash(host) so each host\'s politeness is enforced in one place.'],
+      tradeoffs: ['Crawler traps (infinite calendars): depth limits, URL pattern limits per host.', 'JS-heavy sites need headless rendering — 10–100× more expensive; do it selectively.', 'Freshness vs coverage: recrawl frequency by change rate and importance.', 'Bloom filter false positives skip a few new URLs — acceptable.', 'Legal/ethical: robots.txt, rate limits, identify your user agent.'],
+      pace: ['URL frontier with politeness + priority', 'URL and content dedupe', 'distribution by host + failure handling'],
+      variant: 'Design a **price-monitoring crawler** that re-checks 50 M product pages across 5k retailers every few hours and alerts on price changes.',
+      quiz: [
+        ['How is per-host politeness enforced efficiently?', ['Global sleep', 'Per-host queues + a heap keyed by next allowed fetch time', 'Random delays', 'One thread per host'], 1, 'Only hosts that are "ready" get fetched.'],
+        ['Detect near-duplicate pages?', ['MD5 of HTML', 'SimHash / MinHash fingerprints', 'URL comparison', 'Page length'], 1, 'Exact hashes miss tiny differences like timestamps.'],
+        ['Why partition crawl work by host?', ['Security', 'Keeps politeness state and robots rules for a host on one node', 'Faster DNS only', 'Sorting'], 1, 'Avoids cross-node coordination per request.']
+      ]
+    }),
+
+    design(G2, 'Search autocomplete', {
+      summary: 'Return the top suggestions for a typed prefix in milliseconds (Google search box).',
+      clarify: ['How many suggestions? Ranked by popularity only or personalised?', 'Freshness: how quickly should trending queries appear?', 'Languages, spelling correction in scope?', 'Filter offensive suggestions?'],
+      fr: ['Top 5–10 suggestions for a prefix', 'Ranked by popularity (+ optional personalisation)', 'Trending updates'], nfr: ['p99 < 50 ms end-to-end (typing speed)', 'High availability; stale by minutes is OK', 'Scale to ~50k QPS'],
+      est: ['10 M DAU × 10 searches × ~15 keystroke requests (with debounce ~6) ≈ 600 M/day ≈ **7k QPS**, peak ~20k.', 'Top 10 M unique queries × ~30 B + top-k lists per node → a trie of a few GB — fits in memory per replica.'],
+      hld: `
+flowchart LR
+  U["Browser<br/>debounce 100 ms,<br/>local cache"] --> CDN["CDN / edge cache<br/>short prefixes"]
+  CDN --> AS["Autocomplete service<br/>in-memory trie with top-k per node"]
+  AS --> PERS["Personal history<br/>(optional merge)"]
+  LOG[["Query logs"]] --> AGG["Aggregation job<br/>counts with time decay"]
+  AGG --> BUILD["Trie builder"]
+  BUILD --> SNAP[("Trie snapshots<br/>object storage")]
+  SNAP -->|"load / hot swap"| AS
+  STREAM["Streaming trending<br/>counts (1–5 min)"] --> AS
+`, caption: 'Offline pipeline builds the trie; online servers only do lookups. Trending comes from a small streaming overlay.',
+      api: `
+GET /v1/suggest?q=how%20to%20m&limit=8&lang=en -> {suggestions:[{text, score}]}
+
+TrieNode: children{char -> node}, top_k: [(score, query)] precomputed
+Aggregates: query | count_7d_decayed | last_seen
+`,
+      deep: ['**Data structure:** trie where each node stores its precomputed top-k completions → lookup is O(prefix length); sharding by prefix range if one machine is not enough.', '**Building & updating:** batch aggregation from logs (hourly/daily) with time decay; blue/green swap of trie snapshots; streaming overlay for trending.', '**Latency tricks:** client debounce + cache, CDN caching for 1–2 char prefixes, keep everything in memory, replicate per region.'],
+      tradeoffs: ['Freshness vs cost: rebuild hourly + streaming trends.', 'Personalisation adds a per-user lookup — merge client-side or at a second tier.', 'Filtering: block lists and safety classifiers applied at build time.', 'Hot prefix shards ("a", "th") — replicate, don\'t range-partition naively.', 'Memory: store top-k as IDs referencing a query table.'],
+      pace: ['trie with top-k per node', 'offline build + hot swap + trending overlay', 'latency (client, CDN, sharding)'],
+      variant: 'Design **autocomplete for an e-commerce catalog** that must respect inventory (hide out-of-stock), support typos, and personalise to recent views.',
+      quiz: [
+        ['Why store top-k at every trie node?', ['Saves memory', 'Lookup becomes O(prefix length) instead of traversing the whole subtree', 'Needed for inserts', 'Sorting'], 1, 'Precompute at build time, serve instantly.'],
+        ['How do you update the trie without downtime?', ['Lock and mutate', 'Build a new snapshot offline and hot-swap it', 'Restart all servers', 'Update per keystroke'], 1, 'Blue/green snapshots.'],
+        ['Most effective client-side optimisation?', ['Bigger payloads', 'Debounce keystrokes + cache previous prefixes', 'Polling', 'HTTP/1.0'], 1, 'Cuts QPS dramatically.']
+      ]
+    }),
+
+    design(G2, 'Ride-sharing', {
+      summary: 'Match riders with nearby drivers in real time, track trips, and price them (Uber / Lyft).',
+      clarify: ['Cities / scale? Ride types (pool)?', 'Location update frequency?', 'Matching optimisation goal (ETA, utilisation)?', 'Payments and surge pricing in scope?'],
+      fr: ['Drivers stream location', 'Rider requests a ride → matched to a driver', 'Trip lifecycle + live tracking', 'Fare estimate and surge'], nfr: ['Match in < few seconds', 'Location updates: high write throughput, low latency', 'Trip state never lost or double-assigned'],
+      est: ['5 M active drivers × 1 update / 4 s ≈ **1.25 M location writes/s** — must be in-memory.', '20 M rides/day ≈ 230 ride requests/s avg, ~1–2k/s peak.', 'Location record ~50 B → 5 M × 50 B = 250 MB of current positions (tiny); history goes to a stream.'],
+      hld: `
+flowchart LR
+  D["Driver app"] -->|"location every 4 s"| LG["Location gateway"]
+  LG --> GEO[("Geo index in memory<br/>H3 / geohash cell → drivers")]
+  LG --> KS[["Location stream"]] --> HIST[("Trip traces / analytics")]
+  R["Rider app"] --> RS["Ride service"]
+  RS --> MT["Matching service"]
+  MT --> GEO
+  MT --> ETA["ETA / routing"]
+  MT -->|"offer, 10 s timeout"| D
+  RS --> TS[("Trip DB<br/>state machine")]
+  RS --> PR["Pricing / surge"]
+  RS --> PAY["Payments"]
+`, caption: 'Location data is ephemeral and in-memory; trip state is durable and transactional.',
+      api: `
+PUT  /v1/drivers/me/location {lat, lng, heading, ts}          (or via persistent socket)
+POST /v1/rides {pickup, dropoff, type} -> {ride_id, fare_estimate, status: MATCHING}
+POST /v1/rides/{id}/accept (driver)  -> 200 | 409 already taken
+GET  /v1/rides/{id}                  -> {status, driver, eta, route}
+
+trips: ride_id | rider_id | driver_id | status (REQUESTED→MATCHED→ARRIVING→IN_PROGRESS→COMPLETED/CANCELLED) | fare | version
+`,
+      deep: ['**Geo index:** divide the map into cells (geohash/H3/S2); keep `cell → set of available drivers` in memory, sharded by region/cell; query the rider\'s cell + neighbours ring by ring.', '**Matching:** candidate drivers by ETA (not straight-line distance), offer to one (or a few) with timeout; batch matching every few seconds in dense areas for global optimisation.', '**Consistency of assignment:** accept uses a conditional write on the trip (`status = MATCHING AND version = v`) so two drivers can\'t both win; driver locked to one trip.'],
+      tradeoffs: ['Location updates: drop stale ones, accept loss (next update comes in 4 s).', 'Hot cells (airports, stadiums) → finer cells or dedicated shards.', 'Surge pricing: computed per cell from supply/demand ratio over a sliding window.', 'Region failover: trips in progress must survive — trip DB replicated; location rebuilds quickly from new updates.', 'Mobile networks are flaky — idempotent APIs and resumable sockets.'],
+      pace: ['geo index for nearby drivers', 'matching + offer/accept flow', 'trip state machine consistency'],
+      variant: 'Design **food delivery (DoorDash)**: three parties (customer, restaurant, courier), preparation time uncertainty, batching multiple orders per courier.',
+      quiz: [
+        ['Where do current driver locations live?', ['Relational DB rows updated per ping', 'In-memory geo index sharded by cell, stream for history', 'Object storage', 'Browser'], 1, '1M+ writes/s of ephemeral data belongs in memory.'],
+        ['Prevent two drivers accepting the same ride?', ['Client check', 'Conditional/optimistic write on trip status/version', 'Timeouts only', 'Queue ordering'], 1, 'Only one compare-and-set succeeds.'],
+        ['Why rank candidates by ETA rather than distance?', ['Simpler', 'Road networks, one-ways and traffic make distance misleading', 'GPS is inaccurate', 'Cheaper'], 1, 'A driver 300 m away across a highway may be 10 minutes away.']
+      ]
+    }),
+
+    design(G2, 'Payment system', {
+      summary: 'Accept payments via external processors with correctness guarantees: idempotency, ledgers, reconciliation.',
+      clarify: ['Pay-in (customers pay us) and/or pay-out (we pay sellers)?', 'Which PSPs (Stripe, Adyen)? Cards only?', 'Multi-currency? Refunds, disputes?', 'Compliance scope (PCI DSS)?'],
+      fr: ['Create payment for an order, charge via PSP', 'Refunds', 'Ledger of all money movements', 'Payouts to sellers'], nfr: ['**Correctness > latency**: never double-charge, never lose a payment', 'Auditability', 'Availability with graceful degradation'],
+      est: ['1 M transactions/day ≈ **12 TPS** avg, 100 TPS peak — scale is not the problem; correctness is.', 'Ledger: 2 entries/tx minimum × 1 M/day → small; retain for 7+ years.'],
+      hld: `
+flowchart LR
+  CL["Checkout"] --> PAPI["Payment API<br/>Idempotency-Key"]
+  PAPI --> PDB[("Payments DB<br/>state machine")]
+  PAPI --> EX["PSP executor"]
+  EX -->|"tokenised card"| PSP["PSP (Stripe/Adyen)"]
+  PSP -. webhooks .-> WH["Webhook handler<br/>verify, dedupe"]
+  WH --> PDB
+  PDB --> OB[["Outbox → events"]]
+  OB --> LED[("Double-entry ledger")]
+  OB --> WAL["Wallet / payouts"]
+  REC["Daily reconciliation"] --> LED
+  PSP -->|"settlement files"| REC
+`, caption: 'Card data never touches our servers (PSP tokenisation). The ledger is append-only and reconciled daily with PSP settlement reports.',
+      api: `
+POST /v1/payments  Idempotency-Key: 7f3c...
+  {order_id, amount: 4999, currency: "EUR", payment_method_token}
+  -> 201 {payment_id, status: "PENDING" | "SUCCEEDED" | "FAILED"}
+POST /v1/payments/{id}/refunds {amount}
+
+payments: payment_id | order_id | idempotency_key (UNIQUE) | amount | currency | status | psp_ref | version
+ledger:   entry_id | tx_id | account | debit | credit | currency | created_at   -- sum(debit) == sum(credit) per tx
+`,
+      deep: ['**Idempotency end-to-end:** unique idempotency key stored with the result; retries replay; pass our payment ID as the PSP idempotency key too; webhooks deduped by PSP event ID.', '**State machine & unknown outcomes:** timeouts leave status UNKNOWN → query the PSP / wait for webhook; never blindly retry a charge without an idempotency key.', '**Ledger & reconciliation:** double-entry, immutable entries, corrections as new entries; daily reconciliation against PSP settlement files flags mismatches for humans.'],
+      tradeoffs: ['Synchronous vs async confirmation: 3-D Secure and bank methods are async by nature.', 'Exactly-once is achieved via idempotency + dedupe, not via the network.', 'Money as integers in minor units (cents) — never floats.', 'Multi-PSP routing improves resilience and cost but complicates reconciliation.', 'PCI scope minimised by tokenisation / hosted fields.'],
+      pace: ['idempotency + retries across our API and the PSP', 'payment state machine + webhooks', 'double-entry ledger + reconciliation'],
+      variant: 'Design a **wallet / peer-to-peer transfer system (Venmo)**: balances, instant transfers between users, fraud checks, and bank payouts.',
+      quiz: [
+        ['Request to PSP timed out. Correct next step?', ['Charge again', 'Mark UNKNOWN; query the PSP by idempotency key or await webhook', 'Refund', 'Tell user it failed'], 1, 'The charge may have succeeded.'],
+        ['How to represent €49.99?', ['49.99 float', '4999 integer minor units + currency code', 'String "49.99"', 'Double'], 1, 'Floats cause rounding errors.'],
+        ['Invariant of a double-entry ledger?', ['Balances never negative', 'Total debits equal total credits for each transaction', 'One entry per payment', 'Entries can be edited'], 1, 'Every movement has a source and destination.']
+      ],
+      refs: [['Stripe — designing robust APIs with idempotency', 'https://stripe.com/blog/idempotency'], ['Martin Fowler — Accounting patterns (ledger)', 'https://martinfowler.com/eaaDev/AccountingNarrative.html']]
+    }),
+
+    design(G2, 'Distributed job scheduler', {
+      summary: 'Run cron-style and one-off jobs reliably across a fleet of workers (Airflow-lite / Cloud Scheduler).',
+      clarify: ['One-off delayed jobs, recurring cron, and DAG dependencies?', 'Execution guarantee: at-least-once acceptable?', 'Job duration: seconds or hours?', 'Multi-tenant? Priorities?'],
+      fr: ['Schedule job (cron or run-at)', 'Execute on workers with retries/backoff', 'Query status/history, cancel', 'Timeouts, concurrency limits per job'], nfr: ['Jobs start within ~1 s of scheduled time', 'No job lost; duplicates possible but rare (jobs idempotent)', 'Horizontally scalable'],
+      est: ['10 M job runs/day ≈ **115/s** avg, bursts at the top of the minute/hour (cron alignment!) → 10–50× peaks.', 'Run history: 10 M × 1 KB = 10 GB/day → partition by day, TTL.'],
+      hld: `
+flowchart LR
+  API["Scheduler API"] --> JDB[("Jobs DB<br/>definitions + next_run_at")]
+  SCH["Scheduler nodes<br/>(leader or partitioned)"] -->|"due jobs:<br/>SKIP LOCKED"| JDB
+  SCH --> Q[["Run queue<br/>by priority"]]
+  Q --> W1["Worker"]
+  Q --> W2["Worker"]
+  W1 & W2 -->|"heartbeat, result"| RDB[("Runs DB")]
+  MON["Reaper"] -->|"expired lease → retry"| RDB
+  RDB --> DLQ[["DLQ after max attempts"]]
+`, caption: 'Schedulers claim due jobs with row locks (or partition ownership), enqueue runs; workers lease runs and heartbeat.',
+      api: `
+POST /v1/jobs {name, schedule: "*/5 * * * *" | run_at, payload, max_retries, timeout_s, concurrency}
+GET  /v1/jobs/{id}/runs?limit=20
+POST /v1/runs/{id}/cancel
+
+jobs: job_id | tenant | schedule | next_run_at (indexed) | payload | retry_policy | paused
+runs: run_id | job_id | scheduled_for | attempt | status | worker_id | lease_until | started_at | finished_at | error
+      UNIQUE (job_id, scheduled_for)       -- prevents double-enqueue of the same tick
+`,
+      deep: ['**Claiming due work without duplicates:** `SELECT … WHERE next_run_at <= now() FOR UPDATE SKIP LOCKED LIMIT 500`, insert run rows with a UNIQUE (job, scheduled_for), advance next_run_at in the same transaction.', '**Execution guarantees:** leases + heartbeats; reaper re-queues runs whose lease expired; therefore at-least-once → jobs must be idempotent (pass run_id as idempotency key).', '**Scaling & spikes:** partition jobs by hash across scheduler nodes; add jitter to cron schedules; priority queues; per-tenant concurrency caps.'],
+      tradeoffs: ['Single leader scheduler is simple (etcd/ZooKeeper election) but a throughput ceiling; partitioned ownership scales.', 'Timer wheel / delay queues (Redis ZSET by timestamp) for high-volume one-off delayed jobs.', 'Long jobs need checkpointing for retries.', 'Clock skew between schedulers — use DB time.', 'DAG support adds a dependency resolver (topological order) — Airflow-style.'],
+      pace: ['claiming due jobs exactly once per tick', 'leases, heartbeats, retries', 'partitioning and top-of-hour spikes'],
+      variant: 'Design **a delayed message queue** (like SQS delay / Redis delayed jobs) that holds 1 B messages each due at arbitrary future times.',
+      quiz: [
+        ['Why `FOR UPDATE SKIP LOCKED` when polling due jobs?', ['Faster indexes', 'Multiple schedulers can claim different rows without blocking or double-claiming', 'Required by cron', 'Avoids deadlocks only'], 1, 'Each row is claimed by exactly one transaction.'],
+        ['Worker dies mid-job. How is it retried?', ['Never', 'Lease expires (no heartbeat) → reaper re-queues the run', 'User retries manually', 'Queue deletes it'], 1, 'Hence jobs must be idempotent.'],
+        ['Mitigate the "every job at :00" spike?', ['Bigger DB', 'Jitter schedules and spread across the minute; queue with rate limits', 'Disallow cron', 'Run synchronously'], 1, 'Most "hourly" jobs don\'t need to start at exactly :00:00.']
+      ]
+    }),
+
+    design(G2, 'Ticket booking', {
+      summary: 'Sell a limited number of seats for events, including flash sales with huge demand (Ticketmaster / BookMyShow).',
+      clarify: ['Assigned seats or general admission?', 'Flash-sale scale: users vs seats?', 'Hold time before payment?', 'Fairness requirements, bots?'],
+      fr: ['Browse events and seat map', 'Hold seats for N minutes', 'Pay and confirm booking', 'Release holds on timeout/cancel'], nfr: ['**Never double-sell a seat**', 'Survive 10 M users for 50 k seats', 'Fair, bot-resistant'],
+      est: ['Flash sale: 10 M users arriving in minutes → 100k+ req/s at the front door; only ~50 k successful bookings.', 'Seat inventory tiny (50 k rows per event) — contention, not storage, is the challenge.'],
+      hld: `
+flowchart LR
+  U["Users"] --> WR["Virtual waiting room<br/>queue tokens, admission rate"]
+  WR --> CDN["CDN: event pages,<br/>seat map (cached)"]
+  WR --> BK["Booking service"]
+  BK --> HOLD[("Seat holds<br/>Redis SET NX EX 600<br/>or DB row + expires_at")]
+  BK --> INV[("Inventory DB<br/>seat status, version")]
+  BK --> PAY["Payment service"]
+  PAY -->|"success"| CONF["Confirm: status=SOLD<br/>conditional update"]
+  CONF --> INV
+  EXP["Hold expiry"] --> INV
+`, caption: 'The waiting room turns a stampede into a controlled flow; atomic holds prevent double-selling.',
+      api: `
+POST /v1/events/{id}/holds {seat_ids[]}  -> 201 {hold_id, expires_at} | 409 seats unavailable
+POST /v1/holds/{id}/checkout {payment_token, idempotency_key} -> {booking_id, status}
+DELETE /v1/holds/{id}
+
+seats:    event_id | seat_id | status (AVAILABLE|HELD|SOLD) | hold_id | hold_expires_at | version
+bookings: booking_id | user_id | event_id | seat_ids | payment_id | status
+UPDATE seats SET status='HELD', hold_id=$1, hold_expires_at=now()+'10 min'
+ WHERE event_id=$2 AND seat_id = ANY($3) AND (status='AVAILABLE' OR hold_expires_at < now());
+-- succeed only if row count == number of seats requested (in one transaction)
+`,
+      deep: ['**No double booking:** atomic conditional update (or `SELECT … FOR UPDATE`) on seat rows; all-or-nothing for multi-seat holds; confirmation checks the hold is still ours.', '**Flash-sale traffic:** virtual waiting room issuing signed tokens at the rate the booking system can handle; cache everything static; pre-scale.', '**Hold expiry & payments:** TTL holds; payment within the hold; if payment succeeds after expiry → refund or honour if still available; idempotent checkout.'],
+      tradeoffs: ['Pessimistic locks are simple but serialize; optimistic versioning scales better under moderate contention.', 'Redis holds are fast but you still need the DB as source of truth.', 'Bots: CAPTCHA, verified fan programs, per-account limits.', 'General admission: counters with decrement-if-positive instead of seat rows.', 'Fairness vs throughput: FIFO waiting room vs lottery.'],
+      pace: ['atomic seat holds (no double sell)', 'waiting room for flash crowds', 'hold expiry + payment race conditions'],
+      variant: 'Design **flight booking with overbooking** allowed up to 5%, fare classes, and seats assigned at check-in.',
+      quiz: [
+        ['Primary technique to prevent double-selling?', ['Client-side checks', 'Atomic conditional update / row lock on seat status', 'Caching seat map', 'Retries'], 1, 'Only one transaction can move a seat from AVAILABLE to HELD.'],
+        ['Purpose of a virtual waiting room?', ['Marketing', 'Admit users at a rate the backend can handle, fairly', 'Store tickets', 'Payments'], 1, 'Turns a spike into a queue.'],
+        ['Payment succeeds after the hold expired and the seat was resold. Best handling?', ['Ignore', 'Detect at confirmation (conditional update fails) → auto-refund and notify', 'Double-book', 'Crash'], 1, 'Confirmation must re-check ownership.']
+      ]
+    }),
+
+    // ═════════════ PART 3 — AI / LLM DESIGNS
+    design(G3, 'Enterprise RAG', {
+      summary: 'Question answering over a company\'s documents with permissions, citations, freshness and measurable quality.',
+      clarify: ['Sources (SharePoint, Confluence, Drive, tickets)? Volume?', 'Must answers respect per-document permissions?', 'Freshness requirement after a doc changes?', 'Accuracy bar, citations required, languages?'],
+      fr: ['Ingest from connectors continuously', 'Answer questions with citations', 'Respect document ACLs', 'Feedback (thumbs, corrections)'], nfr: ['p95 < 5 s to first token < 1.5 s', 'No permission leaks — ever', 'Grounded answers; "I don\'t know" when unsupported'],
+      est: ['10 M documents × ~10 chunks = **100 M chunks** × 1024-dim float32 (4 KB) = **400 GB** vectors (≈100 GB with int8 quantisation).', '50 k employees × 5 questions/day = 250 k/day ≈ 3 QPS avg, 30 QPS peak.', 'Per question: ~6 k input tokens + 400 output → cost dominated by input; cache and rerank to keep context small.'],
+      hld: `
+flowchart TB
+  subgraph Ingestion
+    CN["Connectors<br/>delta sync + webhooks"] --> PR["Parse + OCR +<br/>structure-aware chunking"]
+    PR --> EM["Embed"]
+    PR --> ACL["ACL extraction<br/>groups per doc"]
+    EM --> VX[("Hybrid index<br/>vectors + BM25 + ACL fields")]
+    ACL --> VX
+  end
+  subgraph Query
+    Q["User (SSO)"] --> GW["RAG API"]
+    GW --> ID["Resolve user groups"]
+    ID --> RT["Retrieve with ACL filter<br/>hybrid + RRF"]
+    RT --> RR["Rerank top 8"]
+    RR --> LLM["LLM via gateway<br/>answer + citations"]
+    LLM --> GC["Grounding check"]
+    GC --> Q
+  end
+  VX -.-> RT
+  GW -.traces.-> OBS["Eval + observability"]
+`, caption: 'ACLs are enforced at retrieval time (pre-filter), never by asking the LLM to hide things.',
+      api: `
+POST /v1/ask {question, conversation_id?, filters?: {source, date_from}}
+  -> stream {answer_delta..., citations:[{doc_id, title, url, chunk_id}], confidence}
+POST /v1/feedback {answer_id, rating, comment}
+
+chunks: chunk_id | doc_id | text | embedding | tsvector | allowed_groups[] | source | updated_at | doc_version
+docs:   doc_id | source_uri | acl_hash | content_hash | last_synced_at | deleted
+`,
+      deep: ['**Permissions:** sync ACLs with content; store allowed principals per chunk; pre-filter retrieval by the user\'s groups (resolved from the IdP, cached briefly); re-sync ACL changes quickly — ACL changes matter more than content changes.', '**Retrieval quality:** structure-aware chunking, contextual chunk headers, hybrid BM25 + dense with RRF, cross-encoder reranking, query rewriting for follow-ups, metadata filters.', '**Evaluation & freshness:** golden set per department, retrieval recall@k + faithfulness metrics in CI; incremental sync using delta APIs; delete propagation within minutes.'],
+      tradeoffs: ['Post-filtering by ACL after retrieval can return empty results — pre-filter in the index.', 'Long-context models vs RAG: long context is simpler for small corpora but costlier and still needs ACLs.', 'Per-tenant indexes (isolation) vs shared index with filters (efficiency).', 'Caching answers is risky with ACLs — key caches by permission set.', 'Failure: LLM provider down → return top documents as search results.'],
+      pace: ['ACL-aware retrieval', 'retrieval quality stack (hybrid, rerank, chunking)', 'evals + freshness'],
+      variant: 'Design **RAG for a customer-facing help centre** in 12 languages where documents are public but answers must never promise things outside policy.',
+      quiz: [
+        ['Where must document permissions be enforced?', ['In the system prompt', 'At retrieval time via filters on indexed ACLs', 'In the UI', 'After generation by the LLM'], 1, 'The model can be tricked; never give it data the user can\'t see.'],
+        ['100 M chunks × 1024-dim float32 is about…', ['4 GB', '40 GB', '400 GB', '4 TB'], 2, '100 M × 4 KB = 400 GB.'],
+        ['Why RRF fusion?', ['Cheaper embeddings', 'Combines rank lists from BM25 and dense retrieval without calibrating their scores', 'Required by pgvector', 'Compression'], 1, 'Score scales differ; ranks are comparable.']
+      ]
+    }),
+
+    design(G3, 'Multi-agent orchestration platform', {
+      summary: 'A platform where teams define agents and workflows (LangGraph-style) that call tools, collaborate, pause for humans, and run reliably.',
+      clarify: ['Who builds agents — internal devs or business users?', 'Long-running (hours/days) with human steps?', 'Tool ecosystem: MCP servers, internal APIs?', 'Isolation, budgets, and audit requirements?'],
+      fr: ['Define agents/graphs (nodes, tools, routing)', 'Run with persisted state; pause/resume (HITL)', 'Tool registry (MCP) with auth', 'Traces, costs, replays'], nfr: ['Durable: a crash never loses a run', 'Isolation between tenants and tool sandboxes', 'Cost and step budgets enforced'],
+      est: ['5 k runs/hour, average 15 LLM calls + 10 tool calls per run → ~21 LLM calls/s; tokens ~ 3 k/call → 60 k tokens/s through the gateway.', 'State checkpoints: 25 steps × 20 KB = 500 KB per run → 2.5 GB/hour; TTL + archive.'],
+      hld: `
+flowchart LR
+  UI["Studio / API"] --> RUN["Run API"]
+  RUN --> Q[["Run queue"]]
+  Q --> EX["Graph executors<br/>(stateless workers)"]
+  EX <--> CK[("Checkpointer<br/>Postgres: state per step")]
+  EX --> GW["LLM gateway<br/>routing, budgets"]
+  EX --> TR["Tool router"]
+  TR --> MCP["MCP servers<br/>(tenant-scoped creds)"]
+  TR --> SB["Code sandbox<br/>(gVisor / Firecracker)"]
+  EX -->|"interrupt"| HITL["Approval inbox"]
+  HITL -->|"resume with input"| RUN
+  EX -.spans.-> OBS["Tracing + cost"]
+`, caption: 'Executors are stateless; the checkpointer makes every step resumable. Humans resume paused runs through the same API.',
+      api: `
+POST /v1/graphs {name, version, definition}            # nodes, edges, tools, budgets
+POST /v1/runs {graph, version, input, thread_id?}  -> {run_id, status}
+GET  /v1/runs/{id}/events (SSE)                    -> node_started, tool_call, llm_delta, interrupt
+POST /v1/runs/{id}/resume {decision, edited_args?}
+
+runs:        run_id | graph_version | tenant | status | budget_tokens | spent_tokens | created_at
+checkpoints: run_id | step | node | state_json | parent_step | created_at
+tool_calls:  run_id | step | tool | args_hash | idempotency_key | result_ref | approved_by
+`,
+      deep: ['**Durability & resumption:** checkpoint after every node; executor crash → another worker resumes from the last checkpoint; tool calls carry idempotency keys so replays don\'t repeat side effects.', '**Tools & security:** MCP tool registry with per-tenant credentials, least privilege scopes, allow-listed tools per graph, irreversible tools behind `interrupt` approvals, sandboxed code execution with no network by default.', '**Control & cost:** per-run step/token/time budgets, loop detection, supervisor vs fixed-graph patterns, model routing (small models for routing/classification).'],
+      tradeoffs: ['Free-form multi-agent chat is flexible but unpredictable; prefer explicit graphs with LLM nodes.', 'Checkpoint size vs replay fidelity (store full state vs deltas).', 'Synchronous API vs async runs (webhooks/SSE) for long workflows.', 'Versioning graphs: in-flight runs stay pinned to the version they started with.', 'Observability cost: sample verbose traces, keep all metadata.'],
+      pace: ['durable execution + checkpoints', 'tool security + HITL', 'budgets, routing, versioning'],
+      variant: 'Design an **agent platform for a bank\'s back office** where every tool call must be auditable, some steps require four-eyes approval, and runs span days.',
+      quiz: [
+        ['Executor crashes mid-run. How do you avoid repeating a "send email" tool call on resume?', ['Hope it didn\'t send', 'Idempotency key per tool call recorded before/with execution', 'Disable retries', 'Restart the run'], 1, 'Record intent + key; the tool (or wrapper) dedupes.'],
+        ['In-flight runs when you deploy a new graph version?', ['Migrate mid-run', 'Pin runs to the version they started with', 'Cancel all', 'Mix versions'], 1, 'Avoids state/shape mismatches.'],
+        ['Safest default for code-execution tools?', ['Run on the executor host', 'Isolated sandbox (microVM/gVisor) with no network and resource limits', 'Run in the browser', 'Trust the model'], 1, 'LLM-generated code is untrusted input.']
+      ]
+    }),
+
+    design(G3, 'LLM gateway (routing, fallback, caching, cost)', {
+      summary: 'One internal API in front of all model providers: auth, routing, fallbacks, caching, rate limits, cost tracking and logging.',
+      clarify: ['Which providers/models (OpenAI, Anthropic, Bedrock, Azure, self-hosted)?', 'Streaming required?', 'Per-team budgets and chargeback?', 'Data policies: PII redaction, region pinning, zero retention?'],
+      fr: ['Unified chat/embeddings API (streaming)', 'Routing by policy: cost, latency, capability', 'Fallback across providers', 'Caching, quotas, cost tracking per team'], nfr: ['< 20 ms added latency; streaming passthrough', '99.95% availability (higher than any single provider)', 'Secure key custody, audit logs'],
+      est: ['2 k requests/s peak across the company; avg 2 k input + 500 output tokens → ~5 M tokens/s.', 'Logs: 2 k/s × 10 KB (prompts truncated/redacted) ≈ 1.7 TB/day → sample bodies, keep all metadata.', 'Exact-match cache hit rates 5–30% for repetitive workloads; semantic cache only for safe, non-personal queries.'],
+      hld: `
+flowchart LR
+  APP["Internal apps<br/>(team API keys)"] --> GW["Gateway<br/>authN, quota, PII policy"]
+  GW --> CA{"cache?"}
+  CA -->|hit| APP
+  CA -->|miss| RT["Router<br/>policy: model, region, cost, latency"]
+  RT --> P1["Provider A"]
+  RT --> P2["Provider B"]
+  RT --> P3["Self-hosted vLLM"]
+  RT -. "circuit breaker,<br/>fallback chain" .- P2
+  GW --> MET[["Usage events"]] --> BILL[("Cost DB + dashboards")]
+  GW --> LOG[("Audit logs<br/>redacted")]
+`, caption: 'Apps never hold provider keys. The router chooses a model per request and fails over on errors/timeouts/429s.',
+      api: `
+POST /v1/chat/completions   (OpenAI-compatible schema; stream=true supported)
+  headers: Authorization: Bearer <team-key>, X-Route-Policy: "cheap"|"best"|"eu-only"
+  body: {model: "auto" | "<alias>", messages, tools?, max_tokens, metadata:{feature, user_id}}
+GET  /v1/usage?team=&from=&to=
+
+routes: alias -> [{provider, model, region, weight, max_rps}], fallback_order, timeouts
+usage:  ts | team | feature | provider | model | input_tokens | output_tokens | cost | latency_ms | cache_hit | status
+`,
+      deep: ['**Routing & fallback:** aliases map to ordered provider lists; health-based circuit breakers; retry only before the first streamed token; hedged requests for latency-critical paths; capability checks (tools, context length).', '**Caching:** exact-match cache keyed by hash(model, messages, params) with tenant scope; provider prompt caching for long shared prefixes; semantic cache only with high thresholds and no personal data.', '**Quotas & cost:** token-based rate limits per team (pre-estimate input tokens, reconcile after response), budgets with alerts/hard stops, cost attribution per feature via metadata.'],
+      tradeoffs: ['Normalising provider APIs loses provider-specific features — allow passthrough fields.', 'Fallback to a different model changes behaviour — evaluate fallbacks and log which served.', 'Central gateway is a critical dependency — deploy per region, stateless, horizontally scaled.', 'Logging prompts vs privacy — redact, sample, restrict access, retention limits.', 'Streaming complicates retries and output guardrails.'],
+      pace: ['routing, fallbacks, circuit breakers (with streaming)', 'caching layers', 'token quotas and cost attribution'],
+      variant: 'Design the gateway for a **regulated EU insurer**: data must stay in the EU, every prompt/response retained for 7 years for audit, and some teams may only use self-hosted models.',
+      quiz: [
+        ['When is it safe to fail over a streaming request to another provider?', ['Anytime', 'Before any tokens have been sent to the client', 'After completion', 'Never'], 1, 'After partial output, switching would produce inconsistent text.'],
+        ['Rate limiting unit for an LLM gateway?', ['Requests only', 'Tokens (estimated up front, reconciled after)', 'Bytes', 'Connections'], 1, 'Capacity and cost scale with tokens.'],
+        ['Semantic caching risk?', ['Too slow', 'Returning an answer to a similar-looking but different question (or another user\'s data)', 'No risk', 'Uses GPUs'], 1, 'Use strict thresholds, scope per tenant, exclude personal queries.']
+      ]
+    }),
+
+    design(G3, 'Vector search service', {
+      summary: 'A managed vector database: ANN indexes at billion scale with filtering, upserts, and multi-tenancy.',
+      clarify: ['Number of vectors and dimensions? Growth rate?', 'Recall target and latency SLO?', 'Metadata filtering needs? Hybrid keyword search?', 'Update/delete frequency? Multi-tenant?'],
+      fr: ['Upsert/delete vectors with metadata', 'k-NN query with filters', 'Namespaces / tenants', 'Hybrid (sparse + dense) optional'], nfr: ['p99 < 50 ms at recall@10 ≥ 0.95', 'Scale to 1 B vectors', 'Fresh within seconds of upsert'],
+      est: ['1 B × 768 dims × 4 B = **3 TB** raw float32; HNSW graph adds ~10–20%.', 'Product quantisation (e.g. 96 bytes/vector) → ~100 GB in RAM + full vectors on SSD for re-scoring.', 'At 5 k QPS and ~2 ms CPU per query per shard → shards × replicas sized for CPU, not just memory.'],
+      hld: `
+flowchart LR
+  C["Client"] --> QR["Query router"]
+  QR --> S1["Shard 1<br/>HNSW / IVF-PQ"]
+  QR --> S2["Shard 2"]
+  QR --> S3["Shard N"]
+  S1 & S2 & S3 --> MG["Merge top-k<br/>+ re-score full precision"]
+  MG --> C
+  W["Upserts"] --> WAL[["Write log"]]
+  WAL --> MB["Mutable in-memory<br/>segment (brute force / small HNSW)"]
+  MB -->|"seal + build index"| SEG[("Immutable segments<br/>object storage + local SSD")]
+  SEG --> S1
+`, caption: 'Segment architecture: fresh writes land in a small mutable segment; background jobs build ANN indexes for sealed segments and compact deletes.',
+      api: `
+POST /v1/indexes {name, dim: 768, metric: "cosine", index: {type: "hnsw", M: 16, ef_construction: 200}}
+POST /v1/indexes/{name}/upsert {vectors:[{id, values[], metadata:{tenant, lang, date}}]}
+POST /v1/indexes/{name}/query {vector[], top_k: 10, filter: {tenant: "acme", date: {"$gte": "2026-01-01"}}, ef: 100}
+DELETE /v1/indexes/{name}/vectors {ids[]}      # tombstones, compacted later
+`,
+      deep: ['**Index choice:** HNSW (high recall, fast, memory-heavy, incremental inserts) vs IVF-PQ (compressed, cheaper, needs training, lower recall → re-score). DiskANN-style for SSD-resident billion-scale.', '**Filtering:** pre-filter (exact but can break graph connectivity for selective filters) vs post-filter (fast, may return < k) vs filter-aware traversal; partition by high-cardinality tenant to make filters cheap.', '**Freshness & deletes:** mutable segment for new data searched by brute force, periodic sealing and index builds, tombstones + compaction.'],
+      tradeoffs: ['Recall vs latency via ef_search / nprobe — expose as a knob.', 'Sharding by random ID (even load, query all shards) vs by tenant (fewer shards per query, hot tenants).', 'Quantisation saves memory, costs recall — re-rank with full vectors.', 'pgvector is enough below ~10–50 M vectors with modest QPS — say so.', 'Rebuilding indexes when the embedding model changes = full re-embed + dual-write migration.'],
+      pace: ['index choice (HNSW vs IVF-PQ) with memory maths', 'filtered search', 'writes, deletes, segments'],
+      variant: 'Design **image similarity search for a marketplace** with 500 M product images, filtering by category/price/stock, and near-duplicate detection on upload.',
+      quiz: [
+        ['Memory for 1 B float32 vectors of 768 dims?', ['~300 GB', '~3 TB', '~30 TB', '~30 GB'], 1, '1e9 × 768 × 4 B ≈ 3.07 TB.'],
+        ['Main downside of HNSW?', ['Low recall', 'High memory usage (graph + vectors in RAM)', 'No inserts', 'Needs training'], 1, 'Hence quantisation or disk-based variants at scale.'],
+        ['Very selective filter (0.1% of vectors) with post-filtering causes…', ['Faster queries', 'Fewer than k results or very low recall', 'Exact results', 'Nothing'], 1, 'Most ANN candidates get filtered out; prefer pre-filter/partitioning.']
+      ]
+    }),
+
+    design(G3, 'LLM inference serving (batching, GPU scheduling, KV cache)', {
+      summary: 'Serve open-weight LLMs on GPUs with high throughput and good latency: continuous batching, KV-cache management, parallelism, autoscaling.',
+      clarify: ['Model sizes (8B, 70B), context lengths?', 'Latency SLOs: TTFT and tokens/s per user?', 'Traffic shape: chat (short) vs long documents?', 'GPU type and budget? Multi-tenant LoRA adapters?'],
+      fr: ['OpenAI-compatible completions with streaming', 'Multiple models / LoRA adapters', 'Priorities and quotas'], nfr: ['TTFT p95 < 1 s, ≥ 30 tokens/s per stream', 'Maximise GPU utilisation (cost)', 'Graceful overload behaviour'],
+      est: ['70B params × 2 bytes (fp16) = **140 GB weights** → at least 2× 80 GB GPUs (tensor parallel), typically 4 for KV headroom.', 'KV cache per token (Llama-2-70B: 80 layers, 8 KV heads × 128 dim, fp16) = 2 × 80 × 8 × 128 × 2 B ≈ **320 KB/token** → a 4 k-token sequence ≈ 1.3 GB.', 'With ~150 GB free for KV across 4 GPUs → ~115 concurrent 4 k sequences; batching is limited by KV memory, not compute.'],
+      hld: `
+flowchart LR
+  API["API / gateway"] --> SCH["Request scheduler<br/>priorities, admission control"]
+  SCH --> R1["Replica 1<br/>vLLM/TGI, TP=4"]
+  SCH --> R2["Replica 2"]
+  subgraph Replica internals
+    PF["Prefill<br/>(compute-bound)"] --> DC["Decode loop<br/>(memory-bandwidth-bound)"]
+    DC --> KV[("Paged KV cache<br/>blocks + prefix cache")]
+    CB["Continuous batching:<br/>join/leave every step"] --> DC
+  end
+  R1 & R2 --> MET["Metrics: queue depth,<br/>KV usage, TTFT, TPOT"]
+  MET --> AS["Autoscaler"]
+`, caption: 'Prefill processes the whole prompt at once; decode generates one token per step for every sequence in the batch.',
+      api: `
+POST /v1/completions {model: "llama-70b" | "llama-70b:lora-acme", prompt|messages, max_tokens, stream, priority}
+metrics: queue_depth, kv_cache_utilisation, ttft_ms, tpot_ms (time per output token), tokens/s, preemptions
+`,
+      deep: ['**Batching:** static batching wastes GPU while short sequences wait for long ones; continuous (iteration-level) batching adds/removes sequences every decode step → several × throughput.', '**KV cache management:** PagedAttention stores KV in fixed blocks (no fragmentation), enables prefix sharing (system prompts, few-shot) and preemption/swap when memory runs out; quantised KV (fp8) doubles capacity.', '**Latency levers:** chunked prefill (don\'t stall decodes behind a long prompt), prefill/decode disaggregation, speculative decoding (small draft model), tensor parallel within a node, replicas across nodes.'],
+      tradeoffs: ['Throughput vs latency: bigger batches → better $/token, worse TPOT.', 'Long-context requests hog KV memory — route them to dedicated replicas.', 'Autoscaling GPUs is slow (minutes to load weights) — keep warm capacity, scale on queue depth/KV usage.', 'Quantising weights (AWQ/GPTQ/fp8) fits on fewer GPUs with small quality loss — measure with evals.', 'Multi-LoRA serving shares base weights across tenants.'],
+      pace: ['memory maths: weights + KV cache', 'continuous batching + paged KV', 'latency levers and autoscaling'],
+      variant: 'Design serving for an **AI coding assistant**: 200 ms p95 for 64-token completions on a 7B model, plus a 70B model for chat — on a fixed GPU budget.',
+      quiz: [
+        ['Why is decode usually memory-bandwidth-bound?', ['Big prompts', 'Each step reads all weights (and KV) to produce just one token per sequence', 'Tokenisation', 'Network'], 1, 'Batching amortises the weight reads across sequences.'],
+        ['What does continuous batching change?', ['Batch forms once per request group', 'Sequences join/leave the batch at every decode iteration', 'Uses CPU', 'Disables streaming'], 1, 'No waiting for the longest sequence to finish.'],
+        ['Main limit on concurrent sequences per replica?', ['CPU cores', 'KV-cache memory', 'Disk', 'Network'], 1, 'Each token in flight costs hundreds of KB for large models.']
+      ],
+      refs: [['vLLM — PagedAttention paper', 'https://arxiv.org/abs/2309.06180'], ['Anyscale — continuous batching explained', 'https://www.anyscale.com/blog/continuous-batching-llm-inference']]
+    }),
+
+    design(G3, 'Eval & observability pipeline', {
+      summary: 'Capture every LLM/agent trace, score quality online and offline, and gate releases on regression evals (Langfuse / LangSmith-like).',
+      clarify: ['Which apps/frameworks emit traces? OpenTelemetry?', 'Volume and retention?', 'Online evals on live traffic, offline experiments, or both?', 'Who consumes it — engineers, PMs, compliance?'],
+      fr: ['Ingest traces/spans with tokens, cost, latency', 'Datasets + experiment runs', 'Scorers: code checks, LLM judges, human labels', 'Dashboards, alerts, CI gates'], nfr: ['Ingestion never slows the app (async, lossy under pressure)', 'Query recent traces in seconds', 'PII-safe storage'],
+      est: ['1 k LLM requests/s × 8 spans × 2 KB = **16 MB/s ≈ 1.4 TB/day** → columnar store + object storage for bodies.', 'Online LLM judging on 5% sample ≈ 50 judge calls/s — budget it like production traffic.'],
+      hld: `
+flowchart LR
+  APP["Apps / agents<br/>SDK or OTel"] -->|"async batch"| ING["Ingestion API"]
+  ING --> K[["Kafka"]]
+  K --> PROC["Processors<br/>redact PII, compute cost"]
+  PROC --> CH[("ClickHouse<br/>spans, metrics")]
+  PROC --> OS[("Object storage<br/>large inputs/outputs")]
+  K --> ONL["Online evaluators<br/>sampled: rules + LLM judge"]
+  ONL --> CH
+  DS[("Datasets")] --> EXP["Experiment runner<br/>(CI)"]
+  EXP --> CH
+  CH --> UI["UI: traces, dashboards,<br/>annotation queues"]
+  CH --> AL["Alerts: quality, cost, latency"]
+`, caption: 'Hot metadata in a columnar DB for fast aggregation; large payloads in object storage referenced by ID.',
+      api: `
+POST /v1/ingest (batch) [{trace_id, span_id, parent_id, type: "generation"|"tool"|"retrieval",
+                         name, model, input_ref, output_ref, tokens_in, tokens_out, cost, latency_ms,
+                         metadata:{prompt_version, user_hash, feature}}]
+POST /v1/scores {trace_id, name: "faithfulness", value: 0.8, source: "llm_judge"|"human"|"code"}
+POST /v1/experiments {dataset_id, app_version, scorers[]} -> {experiment_id}
+`,
+      deep: ['**Ingestion:** non-blocking SDKs with local buffers, batching, backpressure → drop/sampling rather than slowing the app; Kafka to decouple; idempotent span IDs.', '**Scoring:** layered scorers — deterministic checks, LLM-as-judge with versioned rubrics calibrated against human labels, annotation queues for humans; online sampling vs full offline runs.', '**Release gating:** datasets built from production failures; CI runs experiments for each prompt/model change; compare with baseline using thresholds and must-pass cases.'],
+      tradeoffs: ['Store everything vs sample: keep all metadata, sample bodies.', 'Judge cost and drift: version judges; re-calibrate periodically.', 'PII: redact at ingestion; strict access control; retention policies.', 'Self-hosted (data residency) vs SaaS (speed).', 'Cardinality explosion in metrics labels (user IDs) — keep those in traces, not metrics.'],
+      pace: ['non-blocking ingestion + storage split', 'scorer design + judge calibration', 'CI gating and dataset lifecycle'],
+      variant: 'Design eval + monitoring for a **voice agent** (speech → LLM → TTS) where latency per turn and interruption handling matter as much as answer quality.',
+      quiz: [
+        ['Tracing backend is slow. What should the app do?', ['Block until logged', 'Buffer and drop/sample under pressure — never slow user requests', 'Crash', 'Retry synchronously'], 1, 'Observability must not degrade the product.'],
+        ['Why store span metadata in a columnar DB?', ['Transactions', 'Fast aggregations (cost, latency percentiles) over billions of rows', 'Cheaper blobs', 'Graph queries'], 1, 'ClickHouse-style stores excel at analytical scans.'],
+        ['Before gating releases on an LLM judge, you should…', ['Nothing', 'Measure judge agreement with human labels', 'Use temperature 1', 'Hide its reasoning'], 1, 'Uncalibrated judges produce confident noise.']
+      ]
+    }),
+
+    design(G3, 'Guardrails layer', {
+      summary: 'A reusable safety layer around LLM calls: input/output policies, PII, prompt-injection defence, tool-use controls, audit.',
+      clarify: ['Which risks matter most: PII, toxicity, jailbreaks, data exfiltration, off-topic, legal claims?', 'Latency budget for checks?', 'Streaming outputs?', 'Per-app configurable policies?'],
+      fr: ['Input checks (PII, injection, policy)', 'Output checks (PII, policy, grounding, schema)', 'Tool-call authorisation and approval hooks', 'Audit log of decisions'], nfr: ['Adds < 150 ms p95', 'Configurable per app/tenant', 'Fail-safe (block or degrade) when checks fail'],
+      est: ['Guarding 1 k req/s: small classifier models (~10–30 ms on CPU/GPU) scale linearly; LLM-judge checks only on high-risk routes.', 'Audit: 1 k/s × 1 KB = 86 GB/day.'],
+      hld: `
+flowchart LR
+  APP["App"] --> IN["Input pipeline<br/>size, PII redact, injection clf,<br/>topic policy"]
+  IN -->|"block / sanitise"| APP
+  IN --> LLM["LLM (via gateway)"]
+  LLM --> TOOLS{"Tool call"}
+  TOOLS --> PE["Policy engine<br/>(OPA): user perms,<br/>allow-lists, risk tier"]
+  PE -->|"high risk"| AP["Human approval"]
+  PE -->|allowed| T["Tool"]
+  LLM --> OUT["Output pipeline<br/>schema, PII, toxicity,<br/>grounding, claims policy"]
+  OUT --> APP
+  IN & PE & OUT --> AUD[("Audit log")]
+`, caption: 'Cheap deterministic checks first, ML classifiers next, LLM-based checks last and only where needed.',
+      api: `
+POST /v1/guard/input  {app_id, text, user_ctx} -> {action: allow|redact|block, redacted_text, findings[]}
+POST /v1/guard/output {app_id, text, context_docs?, schema?} -> {action, findings[]}
+POST /v1/guard/tool   {app_id, user_ctx, tool, args} -> {action: allow|require_approval|deny, reason}
+
+policy (per app): {pii: {mode: "redact", entities: [EMAIL, IBAN]}, injection: {threshold: 0.8, action: "block"},
+                   topics_allowed: [...], tools: {send_email: {risk: "high", approval: true}}}
+`,
+      deep: ['**Prompt injection:** classifiers on inputs and retrieved content, spotlighting/delimiting untrusted text, but primarily capability limits: tool allow-lists, user-scoped credentials, approval for irreversible actions, egress controls.', '**PII:** detection (regex + NER), reversible tokenisation (replace with placeholders, restore in output if allowed), region-aware policies, redaction in logs.', '**Streaming outputs:** check in windows as tokens stream (buffer a sentence), hard-stop and replace on violation; final full-output check before persistence.'],
+      tradeoffs: ['False positives frustrate users — tune thresholds per app with eval sets.', 'LLM-based guards are accurate but slow and costly — tier them.', 'Centralised service vs in-process library: latency vs consistency of policies.', 'Guards themselves can be attacked — keep policies deterministic where possible.', 'Log enough to audit without creating a PII honeypot.'],
+      pace: ['injection defence via capability control', 'PII detection/tokenisation', 'streaming output moderation + latency budget'],
+      variant: 'Design guardrails for a **healthcare patient-messaging assistant**: no diagnoses, escalate emergencies instantly, PHI never leaves the region.',
+      quiz: [
+        ['Most reliable prompt-injection control?', ['Longer system prompt', 'Constrain what tools can do and require approval for risky actions', 'Better classifier only', 'Lower temperature'], 1, 'Assume the model can be manipulated; bound the impact.'],
+        ['Guard ordering by cost?', ['LLM judge first', 'Deterministic rules → small classifiers → LLM checks on high-risk only', 'Random', 'Only output checks'], 1, 'Keeps latency and cost low.'],
+        ['Streaming output violates policy mid-way. Action?', ['Let it finish', 'Stop the stream, replace with a safe message, log the event', 'Restart generation silently', 'Ignore'], 1, 'Windowed checks make this possible.']
+      ],
+      refs: [['OWASP Top 10 for LLM Applications', 'https://genai.owasp.org/llm-top-10/'], ['NVIDIA NeMo Guardrails docs', 'https://docs.nvidia.com/nemo/guardrails/latest/index.html']]
+    }),
+
+    design(G3, 'Fine-tuning data pipeline', {
+      summary: 'Turn raw logs and documents into versioned, high-quality training datasets, run fine-tunes, and gate models on evals.',
+      clarify: ['Goal: SFT, preference tuning (DPO), or classifier?', 'Data sources and consent/licensing?', 'Target model (open weights vs provider fine-tuning API)?', 'Release cadence and evaluation bar?'],
+      fr: ['Collect and filter candidate examples', 'Label/curate (human + LLM-assisted)', 'Version datasets; train; evaluate; register models', 'Lineage from model back to data'], nfr: ['No PII/secret leakage into training data', 'Reproducible runs', 'No eval contamination'],
+      est: ['From 10 M logged conversations, filtering typically keeps 1–5% → 100–500 k candidates; SFT often needs 1–50 k high-quality examples.', 'Labelling: 20 k examples × 1 min human review ≈ 330 hours → use LLM pre-labels + human review of a sample.'],
+      hld: `
+flowchart LR
+  SRC["Logs, tickets, docs"] --> IN["Ingest + consent filter"]
+  IN --> CL["Clean: dedupe (MinHash),<br/>PII/secret scrub, language"]
+  CL --> QF["Quality filters<br/>heuristics + LLM scoring"]
+  QF --> LB["Labelling<br/>LLM pre-label → human review"]
+  LB --> DS[("Dataset registry<br/>versioned, lineage")]
+  DS --> SPLIT["Train / val split<br/>decontaminate vs eval sets"]
+  SPLIT --> TR["Training job<br/>(LoRA / full)"]
+  TR --> EV["Eval gate<br/>task evals + safety + regression"]
+  EV -->|pass| MR[("Model registry")]
+  MR --> SERVE["Canary deploy"]
+`, caption: 'Every model version points to exact dataset versions and code commit; eval sets are frozen and decontaminated.',
+      api: `
+dataset manifest (versioned, immutable):
+  {dataset: "support-sft", version: "2026-09-15.1", sources: [...], filters: [...],
+   counts: {raw: 1.2M, kept: 38k}, pii_scrubber: "v3", label_guidelines: "v5", hash: "sha256:..."}
+model card: {model: "support-llm-v7", base: "...", datasets: ["support-sft@2026-09-15.1"],
+             hyperparams, eval_results, commit, approved_by}
+`,
+      deep: ['**Quality over quantity:** dedupe near-duplicates, filter by heuristics and LLM quality scores, balance intents, include hard/negative examples, strict formatting.', '**Privacy & compliance:** consent and licensing filters, PII/secret scrubbing with recall measurements, deletion requests propagate (retrain policy).', '**Evaluation & lineage:** frozen eval sets decontaminated (n-gram/embedding overlap checks), regression + safety suites, model registry with lineage and approvals; canary + A/B.'],
+      tradeoffs: ['Fine-tuning vs prompting/RAG: fine-tune for format/style/latency/cost, RAG for knowledge that changes.', 'Synthetic data scales but can collapse diversity — mix with real data and measure.', 'LoRA adapters are cheap to train/serve per customer vs full fine-tunes.', 'Human labelling cost vs quality — calibrate LLM labellers on gold subsets.', 'Model rollback path must exist before release.'],
+      pace: ['cleaning + quality filtering', 'privacy and decontamination', 'eval gate + lineage + rollout'],
+      variant: 'Design a pipeline to fine-tune a **small model that replaces a large model** for a high-volume classification task, using the large model as teacher (distillation).',
+      quiz: [
+        ['Eval contamination means…', ['Bad GPUs', 'Eval examples (or near-duplicates) leaked into training data, inflating scores', 'Noisy labels', 'Wrong metric'], 1, 'Decontaminate before training.'],
+        ['When is fine-tuning preferable to RAG?', ['Knowledge changes daily', 'Consistent format/style or lower latency/cost on a narrow task', 'Need citations', 'Never'], 1, 'RAG for facts, fine-tuning for behaviour.'],
+        ['Near-duplicate detection at scale uses…', ['Exact string compare', 'MinHash / LSH', 'Sorting', 'Regex'], 1, 'Approximate Jaccard similarity efficiently.']
+      ]
+    }),
+
+    design(G3, 'AI coding assistant', {
+      summary: 'IDE completions and an agentic chat that understands the repo, edits files and runs tests (Copilot / Cursor / Claude Code-like).',
+      clarify: ['Inline completion, chat, or autonomous agent tasks — or all three?', 'Repo sizes? Private code policies (no retention)?', 'Latency expectations per mode?', 'Can it run commands/tests? Where?'],
+      fr: ['Inline completions (fill-in-the-middle)', 'Chat with repo context', 'Agent: plan, edit files, run tests, iterate', 'Enterprise controls: policies, audit'], nfr: ['Completion p95 < 300 ms', 'Code never retained/trained on without consent', 'Sandboxed execution'],
+      est: ['100 k developers × 1 completion request every ~5 s while typing (debounced) × 20% active ≈ **4 k QPS** of completions.', 'Completions: small fast model (~7B) with ~2 k-token context; chat/agent: large model, 20–200 k-token contexts → prompt caching essential.'],
+      hld: `
+flowchart LR
+  IDE["IDE extension<br/>local context: open files,<br/>cursor, recent edits"] --> CG["Completion gateway<br/>debounce, cancel stale"]
+  CG --> SM["Small FIM model<br/>low-latency serving"]
+  IDE --> CH["Chat / agent service"]
+  CH --> CTX["Context engine<br/>repo index: symbols graph,<br/>embeddings, grep"]
+  CH --> LM["Large model<br/>prompt caching"]
+  CH --> TL["Tools: read/edit file,<br/>search, run tests"]
+  TL --> SB["Sandbox / user\'s machine<br/>with permission prompts"]
+  IDX["Indexer (incremental)"] --> CTX
+  CH -.telemetry.-> T["Acceptance rate,<br/>edit survival"]
+`, caption: 'Two very different paths: latency-critical completions on a small model; context-heavy agent loops on a large model with tools.',
+      api: `
+POST /v1/complete {prefix, suffix, language, file_path, neighbours[]} -> stream {text}
+POST /v1/agent/sessions {repo_id, task} -> SSE events: plan, tool_call{read_file|edit|run}, diff, message
+Tool schema: edit_file {path, old_str, new_str} | run {cmd, timeout} | search {query}
+`,
+      deep: ['**Context retrieval:** combine open buffers, recently edited files, symbol graph (definitions/references via LSP/tree-sitter), embeddings, and grep; rank and pack into the budget; cache stable prefixes.', '**Completion latency:** small model, FIM prompting, speculative/cached decoding, cancel in-flight requests on new keystrokes, regional serving, short max tokens.', '**Agent loop safety:** permissioned tools, sandboxed command execution, diff review before apply, test-driven iteration, step/token budgets, secrets never sent (ignore files, scanning).'],
+      tradeoffs: ['Bigger context ≠ better — irrelevant code confuses models; retrieval quality matters.', 'Local vs cloud indexing: privacy vs power.', 'Measuring value: acceptance rate is gameable; track edit survival and task success.', 'Model choice per task (routing) for cost.', 'Enterprise: zero retention, audit logs, policy for which repos are indexable.'],
+      pace: ['context engine', 'completion latency path', 'agent tools + sandbox + safety'],
+      variant: 'Design an **automated PR reviewer** bot that comments on GitHub PRs for 2 k repos, with low false-positive rates and org-specific rules.',
+      quiz: [
+        ['Why a separate small model for inline completions?', ['Better quality', 'Latency budget of a few hundred ms and very high QPS', 'Cheaper storage', 'Security'], 1, 'Large models are too slow/expensive per keystroke.'],
+        ['Most important thing to do when the user keeps typing?', ['Queue requests', 'Cancel stale in-flight requests', 'Increase timeout', 'Batch them'], 1, 'Stale completions waste GPU and arrive too late.'],
+        ['Safest way for an agent to run shell commands?', ['Directly on a shared server', 'In a sandbox or with explicit user permission on their machine', 'Never allow tests', 'Via the LLM provider'], 1, 'Model-generated commands are untrusted.']
+      ]
+    }),
+
+    design(G3, 'Support agent with tool use', {
+      summary: 'A customer-facing agent that answers questions and performs actions (order lookup, returns, refunds) safely, with human handoff.',
+      clarify: ['Channels: chat, email, voice?', 'Which actions and their risk (refund limits)?', 'Authentication of the end customer?', 'Handoff to humans: when and how?'],
+      fr: ['Answer from KB (RAG)', 'Actions via tools: order status, address change, return, refund ≤ limit', 'Authenticate customer before account actions', 'Handoff with summary to a human'], nfr: ['Resolution quality measured (CSAT, containment)', 'No unauthorised account access or money movement', 'p95 turn latency < 4 s'],
+      est: ['50 k conversations/day × 6 turns ≈ 300 k turns/day ≈ 3.5 turns/s avg, 20/s peak.', 'Per turn ~4 k tokens → cost per resolved conversation is the KPI to track.'],
+      hld: `
+flowchart LR
+  CU["Customer<br/>web chat / email"] --> CHN["Channel adapter"]
+  CHN --> AG["Agent graph (LangGraph)<br/>classify → auth → plan → act → respond"]
+  AG --> KB["KB retrieval (RAG)"]
+  AG --> AUTH["Customer auth<br/>OTP / logged-in session"]
+  AG --> TR["Tool layer<br/>scoped to authenticated customer"]
+  TR --> OMS["Orders / OMS API"]
+  TR --> REF["Refund API<br/>limit + approval"]
+  AG -->|"low confidence / angry /<br/>policy"| HO["Handoff to human<br/>with summary"]
+  AG -.-> OBS["Traces + evals"]
+`, caption: 'Tools execute with the authenticated customer\'s identity only — the model never chooses whose account to touch.',
+      api: `
+Tools (JSON schema):
+  get_order(order_id)                      -> scoped: order.customer_id must equal session.customer_id
+  update_address(order_id, address)       -> only before shipment
+  create_return(order_id, items[], reason)
+  issue_refund(order_id, amount, reason)  -> auto if amount <= 50 EUR else requires_approval
+  handoff(summary, priority)
+conversation: id | customer_id | channel | state_checkpoint | outcome | csat
+`,
+      deep: ['**Identity & authorisation:** verify the customer (logged-in session or OTP) before account tools; tools derive customer ID from the session, not from model arguments; server-side policy checks per tool.', '**Action safety:** refund limits, confirmation step with the customer ("I\'ll refund €32 to your Visa — confirm?"), idempotency keys, approval queue for above-limit, full audit.', '**Handoff & measurement:** sentiment/intent triggers and explicit requests; structured summary to agent; measure containment, CSAT, wrong-action rate on golden conversations.'],
+      tradeoffs: ['Autonomy vs risk: start with read-only tools + drafts, expand per intent based on evals.', 'Deterministic flows for regulated steps (identity, refunds) vs free-form LLM for conversation.', 'Latency: parallel tool calls, streaming, small model for classification.', 'Prompt injection via customer messages/emails — tools constrained regardless.', 'Multilingual support: translate at edges or native multilingual model — eval both.'],
+      pace: ['auth + tool scoping', 'action safety (limits, confirmation, idempotency)', 'handoff + evaluation'],
+      variant: 'Design a **voice** version for a telecom: phone calls, barge-in, identity via account PIN, actions like plan changes, 1 s response budget.',
+      quiz: [
+        ['How should `get_order` determine whose order to fetch?', ['From the model\'s arguments only', 'Check the order belongs to the authenticated session\'s customer server-side', 'Trust the customer\'s claim', 'Any order ID is fine'], 1, 'Prevents injection-driven access to other accounts.'],
+        ['Refund above policy limit — agent should…', ['Refund anyway', 'Create an approval request and tell the customer the next step', 'Refuse forever', 'Ask the model to decide'], 1, 'Deterministic policy, human in the loop.'],
+        ['Best north-star metric?', ['Tokens used', 'Resolution rate with CSAT guardrail (and cost per resolution)', 'Messages sent', 'Latency only'], 1, 'Measures real value and quality.']
+      ]
+    }),
+
+    design(G3, 'Embedding-based recommender', {
+      summary: 'Recommend items (products, articles, videos) with two-tower embeddings for candidate generation and a ranking model on top.',
+      clarify: ['Items and users count? Catalog churn?', 'Surfaces: home feed, "similar items", email?', 'Real-time signals (session clicks) needed?', 'Business constraints: diversity, freshness, sponsored items?'],
+      fr: ['Personalised recommendations per user', 'Similar items', 'Use real-time session signals', 'A/B testing'], nfr: ['p99 < 150 ms', 'Fresh items recommendable within minutes', 'Scale: 100 M users, 50 M items'],
+      est: ['50 M items × 256-dim float32 = **51 GB** (≈13 GB int8) → ANN index sharded/replicated.', '20 k recommendation requests/s; each: 1 ANN query (~500 candidates) + ranking model over 500 → GPU/CPU batch scoring.'],
+      hld: `
+flowchart LR
+  EV["Events: views, clicks,<br/>purchases"] --> ST[["Stream"]]
+  ST --> FS[("Feature store<br/>online + offline")]
+  ST --> TRN["Offline training<br/>two-tower + ranker"]
+  TRN --> IT["Item tower → item embeddings"]
+  IT --> ANN[("ANN index")]
+  REQ["Request (user, context)"] --> RS["Rec service"]
+  RS --> UT["User tower (real-time)<br/>from history + session"]
+  UT --> ANN
+  ANN -->|"~500 candidates"| RK["Ranker<br/>(GBDT / DNN, rich features)"]
+  FS --> RK
+  RK --> RR["Re-rank: diversity,<br/>business rules"]
+  RR --> REQ
+`, caption: 'Retrieval (cheap, recall-oriented) → ranking (expensive, precision-oriented) → business re-ranking.',
+      api: `
+GET /v1/recs?user_id=&surface=home&k=20&context={device, time}
+  -> {items:[{item_id, score, reason}], request_id}   # request_id joins impressions with outcomes
+POST /v1/events {user_id, item_id, type: view|click|purchase, request_id, ts}
+`,
+      deep: ['**Two-tower retrieval:** user and item encoders trained with in-batch negatives; item embeddings precomputed into ANN; user embedding computed per request from recent behaviour.', '**Ranking & features:** a heavier model scores candidates with cross features (user×item, price, recency); feature store guarantees training/serving consistency.', '**Cold start & freshness:** new items embedded from content (text/image embeddings) immediately; exploration slots; new users use popularity + context + onboarding choices.'],
+      tradeoffs: ['Feedback loops/popularity bias → exploration, diversity constraints.', 'Real-time user embeddings improve relevance, cost latency.', 'Offline metrics (recall@k, NDCG) vs online (CTR, conversion) — A/B test is the truth.', 'Index refresh cadence vs cost; incremental upserts for new items.', 'Privacy: consent for personalisation, data retention.'],
+      pace: ['two-tower retrieval + ANN', 'ranking + feature store', 'cold start, feedback loops, evaluation'],
+      variant: 'Design **"similar jobs" recommendations for a job board** where postings expire in 30 days and applications are the success signal.',
+      quiz: [
+        ['Why split retrieval and ranking?', ['Tradition', 'Cheap retrieval narrows millions to hundreds; expensive ranking only scores those', 'Ranking can\'t use embeddings', 'Storage'], 1, 'Latency budget allows a heavy model only on a small set.'],
+        ['A new item with no interactions — how can it be recommended?', ['It can\'t', 'Embed it from its content features and reserve exploration slots', 'Wait a week', 'Random'], 1, 'Content-based cold start.'],
+        ['Why log a request_id with impressions and events?', ['Debugging only', 'To join what was shown with what happened — training labels and A/B analysis', 'Rate limiting', 'Security'], 1, 'Enables unbiased training data and experiment metrics.']
+      ]
+    }),
+
+    design(G3, 'Document extraction pipeline', {
+      summary: 'Extract structured data from invoices, claims, contracts and IDs at scale with confidence scoring and human review.',
+      clarify: ['Document types and volume? Scanned or digital?', 'Fields and accuracy targets per field?', 'Latency: batch overnight or near-real-time?', 'Downstream system and review workflow?'],
+      fr: ['Ingest documents (email, upload, SFTP)', 'Classify type, extract fields per schema', 'Validate + confidence; human review queue', 'Deliver to downstream (ERP/API)'], nfr: ['Field-level accuracy ≥ target (e.g. 98% after review)', 'Throughput: 1 M pages/day', 'Traceability: every value cites its source'],
+      est: ['1 M pages/day ≈ **12 pages/s** avg, bursty at month-end (×5).', 'OCR/layout ~0.5–2 s/page CPU/GPU → 20–100 workers; LLM extraction ~3 k tokens/page → cost per page is a key metric.', 'If 15% of documents go to review at 1 min each → 150k min/day → size the review team or improve automation.'],
+      hld: `
+flowchart LR
+  IN["Email / upload / SFTP"] --> Q[["Queue"]]
+  Q --> PRE["Pre-process<br/>split, deskew, OCR + layout"]
+  PRE --> CLS["Classify doc type"]
+  CLS --> EX["Extract per schema<br/>LLM (vision) + rules"]
+  EX --> VAL["Validate<br/>checksums, totals, lookups"]
+  VAL --> CF{"confidence ≥ threshold<br/>and valid?"}
+  CF -->|yes| OUT["Deliver to ERP / API"]
+  CF -->|no| HR["Human review UI<br/>fields + highlighted source"]
+  HR --> OUT
+  HR --> LAB[("Corrections → eval set<br/>+ training data")]
+`, caption: 'Confidence + validation route work: straight-through processing when safe, humans for the rest; corrections feed back into evals.',
+      api: `
+POST /v1/documents (multipart) {source, doc_type_hint?} -> 202 {document_id}
+GET  /v1/documents/{id} -> {status, doc_type, fields:{invoice_number:{value, confidence, page, bbox}}, review_state}
+Webhook: document.completed {document_id, fields, reviewed_by?}
+
+extraction: document_id | field | value | confidence | page | bbox | method (llm|rule|human) | version
+`,
+      deep: ['**Extraction strategy:** layout-aware OCR + LLM with a strict JSON schema, per-field citations (page/bbox); templates/rules for high-volume fixed formats; vision-LLM for messy scans.', '**Confidence & validation:** combine model self-scores, agreement across two methods, and business validation (line items sum to total, VAT maths, vendor exists in ERP) → route to review.', '**Human review loop:** UI shows the source region next to each field; corrections logged; per-field accuracy dashboards; thresholds tuned to hit accuracy targets at minimum review cost.'],
+      tradeoffs: ['LLM extraction generalises across layouts but costs more per page than templates.', 'Confidence scores from LLMs are poorly calibrated — calibrate against review outcomes.', 'Batch vs streaming: month-end spikes favour queues + autoscaling.', 'PII in documents: encryption, retention, region pinning.', 'Idempotency: the same invoice arriving twice (dedupe by hash + vendor + number).'],
+      pace: ['extraction strategy per doc type', 'confidence + validation routing', 'review loop + metrics'],
+      variant: 'Design **KYC document verification**: ID cards + proof of address in 30 countries, fraud/tamper detection, decision within 2 minutes.',
+      quiz: [
+        ['Best signal for routing to human review?', ['Random sampling only', 'Calibrated confidence combined with business-rule validation', 'Document length', 'Time of day'], 1, 'Validation catches confident mistakes.'],
+        ['Why store bounding boxes/page per field?', ['Pretty UI', 'Traceability and fast human verification against the source', 'Compression', 'OCR speed'], 1, 'Reviewers verify in seconds; auditors trace values.'],
+        ['Same invoice received twice from email and SFTP. Handling?', ['Process both', 'Dedupe by content hash and (vendor, invoice number)', 'Delete both', 'Ask the vendor'], 1, 'Prevents double payment downstream.']
+      ]
+    })
+  ];
+
+  window.TRACK = {
+    key: 'C', cmd: 'C', name: 'System Design', title: 'System Design Track', showSolved: false,
+    intro: 'Part 1 fundamentals (one topic group per session) → Part 2 classic designs → Part 3 AI / LLM designs. Every design follows the same 8 steps: requirements → estimation → architecture → API & data model → deep dives → trade-offs → 45-minute pacing → your variant, critiqued and scored out of 10.',
+    otherTracks: [['Track A — FDE Core', 'track-a-fde-core.html'], ['Track B — DSA', 'track-b-dsa.html']],
+    homeBlocks: [
+      { type: 'visual', h: 'The 8-step design structure', mermaid: `
+flowchart LR
+  A["1 Clarify +<br/>requirements"] --> B["2 Capacity<br/>estimation"] --> C["3 High-level<br/>diagram"] --> D["4 API +<br/>data model"]
+  D --> E["5 Deep dives<br/>2–3 hardest parts"] --> F["6 Bottlenecks,<br/>trade-offs, failures"] --> G["7 Pace to<br/>45 minutes"] --> H["8 Design a variant<br/>→ scored /10"]
+`, caption: 'Use this order in every interview; it is also how each design page is laid out.' },
+      { type: 'table', h: 'How your variant designs are scored (out of 10)', cols: ['Dimension', 'Points', 'What a senior interviewer looks for'], rows: [
+        ['Requirements & scope', '1.5', 'Asks the questions that change the design; states non-functional targets with numbers'],
+        ['Estimation', '1', 'Only numbers that drive decisions; correct orders of magnitude'],
+        ['Architecture', '2', 'Clear components and data flow; one request walked end to end'],
+        ['API & data model', '1', 'Correct keys/indexes/partitioning for the access patterns'],
+        ['Deep dives', '2.5', 'Picks the genuinely hard parts; concrete mechanisms, not buzzwords'],
+        ['Trade-offs & failures', '1.5', 'Names alternatives, failure modes, what breaks at 10×'],
+        ['Communication', '0.5', 'Structured, time-aware, checks in with the interviewer']
+      ] }
+    ],
+    items
+  };
+})();

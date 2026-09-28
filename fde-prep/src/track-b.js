@@ -1,0 +1,1551 @@
+/* Track B — DSA patterns. Problem row: [title, slug, difficulty, askedAt, list, premium]. */
+(function () {
+  const NC = 'NeetCode 150';
+  const LC = 'LeetCode classic';
+  const E = 'Easy', M = 'Medium', H = 'Hard';
+  const CR = 'commonly reported';
+  // p(title, slug, diff, inNeetCode150, premium)
+  const p = (t, s, d, nc, prem) => [t, s, d, CR, nc ? NC : LC, !!prem];
+
+  let n = 0;
+  const pat = (title, summary, blocks) => { n += 1; return { id: 'b' + n, num: n, title, short: 'B' + n, summary, kind: 'module', group: 'Patterns', blocks }; };
+  let c = 0;
+  const checkpoint = (after, qs, note) => { c += 1; return { id: 'cp' + c, kind: 'checkpoint', title: `Checkpoint ${c}: mixed problems (after pattern ${after})`, short: 'Checkpoint ' + c, group: 'Patterns', summary: note || 'Name the pattern BEFORE solving. Then solve each problem on LeetCode and bring your code to the tutor.', blocks: [{ type: 'quiz', h: 'Name the pattern', qs }] }; };
+
+  const cues = items => ({ type: 'list', h: 'Recognition cues', tag: 'b · Cues', items });
+  const tmpl = (code, note) => ({ type: 'code', h: 'Python template', tag: 'c · Template', code, note });
+  const vars = items => ({ type: 'list', h: 'Common variations and mistakes', tag: 'd · Mistakes', items });
+  const probs = rows => ({ type: 'problems', h: `Question set (${rows.length})`, tag: 'e · Practice', rows });
+  const steps = (h, cols, rows) => ({ type: 'table', h, tag: 'a · Walkthrough', cols, rows });
+  const vis = (h, mermaid, caption) => ({ type: 'visual', h, tag: 'a · Visual', mermaid, caption });
+  const cs = items => ({ type: 'csnote', items });
+  const quiz = qs => ({ type: 'quiz', h: 'Pattern quiz', qs });
+
+  const P = ['Arrays & Hashing', 'Two Pointers', 'Sliding Window', 'Prefix Sum', 'Binary Search', 'Stack / Monotonic Stack', 'Linked List', 'Matrix / Grid', 'Trees', 'Heap / Top-K', 'Intervals & Line Sweep', 'Backtracking', 'Graphs', 'Advanced Graphs', '1-D DP', '2-D DP', 'Greedy', 'Design DS', 'Tries', 'Bit Manipulation'];
+
+  const items = [
+    // ───────────── 1
+    pat('Arrays & Hashing', 'Trade memory for time: a dict/set turns "search the rest of the array" into O(1).', [
+      vis('Which hash structure?', `
+flowchart TD
+  Q["Need fast lookup?"] --> A{"What do you look up?"}
+  A -->|"seen before? (yes/no)"| S["set()"]
+  A -->|"value → index / info"| D["dict"]
+  A -->|"how many times?"| C["Counter"]
+  A -->|"group items by a key"| G["defaultdict(list)<br/>key = tuple / sorted string"]
+`, 'Pick the structure by the question you ask of it.'),
+      steps('Two Sum on nums = [2, 7, 11, 15], target = 9', ['Step', 'i, x', 'need = target − x', 'seen (value → index)', 'Action'], [
+        ['1', '0, 2', '7', '{}', '7 not in seen → store 2:0'],
+        ['2', '1, 7', '2', '{2: 0}', '2 in seen → return [0, 1]']
+      ]),
+      cues(['"Find two items that sum / match…"', '"Contains duplicate", "first unique", "appears more than n/2 times"', '"Anagram", "same characters", "group by"', '"Count frequency", "top k frequent"', '"Do it in O(n)" when brute force is O(n²)']),
+      tmpl(`
+from collections import Counter, defaultdict
+
+def two_sum(nums: list[int], target: int) -> list[int]:
+    seen: dict[int, int] = {}          # value -> index
+    for i, x in enumerate(nums):
+        if target - x in seen:         # check BEFORE inserting (don't pair x with itself)
+            return [seen[target - x], i]
+        seen[x] = i
+    return []
+
+def group_anagrams(words: list[str]) -> list[list[str]]:
+    groups: defaultdict[tuple, list[str]] = defaultdict(list)
+    for w in words:
+        count = [0] * 26
+        for ch in w:
+            count[ord(ch) - ord('a')] += 1
+        groups[tuple(count)].append(w)   # lists aren't hashable -> tuple key
+    return list(groups.values())
+
+def is_anagram(a: str, b: str) -> bool:
+    return Counter(a) == Counter(b)
+`),
+      cs(['`dict` = `Dictionary<K,V>`, `set` = `HashSet<T>`; `Counter` / `defaultdict` have no direct C# equivalent (use `GetValueOrDefault`).', 'Keys must be hashable: `tuple` works, `list` does not (C# would compile a `List<int>` key but compare by reference).', '`x in d` is `ContainsKey`; iterating a dict yields keys in insertion order.']),
+      vars(['Inserting before checking in Two Sum → pairs an element with itself.', 'Using a `list` as a dict key → `TypeError: unhashable type`.', 'Sorting (O(n log n)) when a hash map gives O(n); fine if the interviewer accepts it — say the trade-off.', 'Longest Consecutive: only start counting from numbers where `x - 1` is not in the set, otherwise O(n²).', 'Product Except Self: prefix products left→right then suffix right→left, no division (zeros!).']),
+      probs([
+        p('Contains Duplicate', 'contains-duplicate', E, 1), p('Valid Anagram', 'valid-anagram', E, 1), p('Two Sum', 'two-sum', E, 1),
+        p('Majority Element', 'majority-element', E, 0), p('Isomorphic Strings', 'isomorphic-strings', E, 0),
+        p('Group Anagrams', 'group-anagrams', M, 1), p('Top K Frequent Elements', 'top-k-frequent-elements', M, 1),
+        p('Product of Array Except Self', 'product-of-array-except-self', M, 1), p('Valid Sudoku', 'valid-sudoku', M, 1),
+        p('Encode and Decode Strings', 'encode-and-decode-strings', M, 1, 1), p('Longest Consecutive Sequence', 'longest-consecutive-sequence', M, 1),
+        p('First Missing Positive', 'first-missing-positive', H, 0)
+      ]),
+      quiz([
+        ['Time complexity of the hash-map Two Sum?', ['O(n²)', 'O(n log n)', 'O(n) average', 'O(1)'], 2, 'One pass; each dict lookup/insert is O(1) average.'],
+        ['Best key for grouping anagrams in O(n·k)?', ['`sorted(w)` as a list', 'A tuple of 26 letter counts', 'The word length', '`hash(w)`'], 1, 'Counts tuple is O(k) and hashable; `sorted` is O(k log k) and must be converted to a tuple/string.'],
+        ['Longest Consecutive Sequence in O(n): when do you start counting a run?', ['At every number', 'Only when `x - 1` is not in the set', 'Only when `x + 1` is in the set', 'After sorting'], 1, 'Starting only at run beginnings makes each number visited O(1) times overall.'],
+        ['Why does `{[1,2]: "a"}` fail in Python?', ['Dict keys must be strings', 'Lists are mutable and unhashable', 'Keys must be sorted', 'It works'], 1, 'Use a tuple `(1, 2)` instead.']
+      ])
+    ]),
+
+    // ───────────── 2
+    pat('Two Pointers', 'Two indices moving toward each other or in the same direction replace a nested loop.', [
+      steps('Two Sum II on sorted [1, 2, 3, 4, 6, 8], target = 10', ['Step', 'L (value)', 'R (value)', 'sum', 'Action'], [
+        ['1', '0 (1)', '5 (8)', '9', '9 < 10 → need bigger → L += 1'],
+        ['2', '1 (2)', '5 (8)', '10', 'found → return [2, 6] (1-indexed [2, 6])']
+      ]),
+      vis('Two shapes of two pointers', `
+flowchart LR
+  subgraph Opposite ends
+    L1["L →"] --- A1["sorted array"] --- R1["← R"]
+  end
+  subgraph Same direction
+    W["write / slow"] --> A2["array"]
+    RD["read / fast"] --> A2
+  end
+`, 'Opposite ends: sorted input, pair/triple sums, palindromes, area. Same direction: in-place filtering, dedupe, partitioning.'),
+      cues(['Input is **sorted** (or you may sort it)', '"Pair / triplet with sum…", "closest sum"', '"Palindrome", "reverse in place"', '"In place, O(1) extra space", "remove duplicates / move zeroes"', '"Container / trap water" — area between two ends']),
+      tmpl(`
+def two_sum_sorted(nums: list[int], target: int) -> list[int]:
+    l, r = 0, len(nums) - 1
+    while l < r:
+        s = nums[l] + nums[r]
+        if s == target:
+            return [l + 1, r + 1]
+        if s < target:
+            l += 1                 # need a bigger sum
+        else:
+            r -= 1                 # need a smaller sum
+    return []
+
+def three_sum(nums: list[int]) -> list[list[int]]:
+    nums.sort()
+    res = []
+    for i in range(len(nums) - 2):
+        if i and nums[i] == nums[i - 1]:
+            continue               # skip duplicate anchors
+        l, r = i + 1, len(nums) - 1
+        while l < r:
+            s = nums[i] + nums[l] + nums[r]
+            if s < 0:
+                l += 1
+            elif s > 0:
+                r -= 1
+            else:
+                res.append([nums[i], nums[l], nums[r]])
+                l += 1
+                while l < r and nums[l] == nums[l - 1]:
+                    l += 1         # skip duplicate second numbers
+    return res
+
+def move_zeroes(nums: list[int]) -> None:
+    write = 0                      # same-direction: next slot for a non-zero
+    for read in range(len(nums)):
+        if nums[read] != 0:
+            nums[write], nums[read] = nums[read], nums[write]
+            write += 1
+`),
+      cs(['Tuple swap `a, b = b, a` replaces a temp variable.', '`nums.sort()` sorts in place and returns `None`; `sorted(nums)` returns a new list.']),
+      vars(['3Sum: forgetting to skip duplicates → repeated triplets.', 'Using `l <= r` when the two pointers must be different elements.', 'Container With Most Water: always move the **shorter** side — moving the taller can never increase area.', 'Trapping Rain Water: two pointers with `left_max`/`right_max`; process the side with the smaller max.', 'Valid Palindrome II: on first mismatch try skipping either side once.']),
+      probs([
+        p('Valid Palindrome', 'valid-palindrome', E, 1), p('Merge Sorted Array', 'merge-sorted-array', E, 0), p('Move Zeroes', 'move-zeroes', E, 0),
+        p('Valid Palindrome II', 'valid-palindrome-ii', E, 0),
+        p('Two Sum II - Input Array Is Sorted', 'two-sum-ii-input-array-is-sorted', M, 1), p('3Sum', '3sum', M, 1),
+        p('Container With Most Water', 'container-with-most-water', M, 1), p('Sort Colors', 'sort-colors', M, 0),
+        p('Boats to Save People', 'boats-to-save-people', M, 0), p('Trapping Rain Water', 'trapping-rain-water', H, 1)
+      ]),
+      quiz([
+        ['Container With Most Water: which pointer moves?', ['The taller one', 'The shorter one', 'Both', 'Alternate'], 1, 'Area is limited by the shorter line; moving the taller one can only shrink width without raising the limit.'],
+        ['3Sum complexity after sorting?', ['O(n)', 'O(n log n)', 'O(n²)', 'O(n³)'], 2, 'Sort O(n log n) + for each anchor an O(n) two-pointer scan.'],
+        ['Merge Sorted Array (nums1 has space at the end): best direction?', ['Front to back', 'Back to front, filling from the end', 'Use a new array always', 'Sort afterwards'], 1, 'Filling from the end never overwrites unread nums1 values; O(1) extra space.'],
+        ['Which is NOT a two-pointer cue?', ['Sorted input, pair sum', 'Palindrome check', 'Shortest path in a grid', 'Remove duplicates in place'], 2, 'Shortest path in a grid is BFS.']
+      ])
+    ]),
+
+    // ───────────── 3
+    pat('Sliding Window', 'A contiguous window grows on the right and shrinks on the left; each element enters and leaves once → O(n).', [
+      steps('Longest substring without repeating characters, s = "abcabcbb"', ['r (char)', 'window before', 'Action', 'window after', 'best'], [
+        ['0 (a)', '""', 'add a', '"a"', '1'],
+        ['1 (b)', '"a"', 'add b', '"ab"', '2'],
+        ['2 (c)', '"ab"', 'add c', '"abc"', '3'],
+        ['3 (a)', '"abc"', 'a repeated → move l past old a (l=1)', '"bca"', '3'],
+        ['4 (b)', '"bca"', 'b repeated → l=2', '"cab"', '3'],
+        ['5 (c)', '"cab"', 'c repeated → l=3', '"abc"', '3'],
+        ['6 (b)', '"abc"', 'b repeated → l=5', '"cb"', '3'],
+        ['7 (b)', '"cb"', 'b repeated → l=7', '"b"', '3 ✔']
+      ]),
+      vis('Variable window loop', `
+flowchart LR
+  A["expand: add s[r]"] --> B{"window valid?"}
+  B -->|no| C["shrink: remove s[l], l += 1"]
+  C --> B
+  B -->|yes| D["update answer"]
+  D --> E["r += 1"]
+  E --> A
+`, 'For "longest" problems update the answer when valid; for "shortest" problems update inside the shrink loop.'),
+      cues(['"Contiguous subarray / substring"', '"Longest / shortest / maximum sum … of length k" or "with at most k …"', '"Contains all characters of…", "permutation / anagram in string"', 'All numbers are non-negative (sum only grows when expanding)', 'Brute force checks every subarray: O(n²)']),
+      tmpl(`
+from collections import Counter
+
+def longest_at_most_k_distinct(s: str, k: int) -> int:
+    count: Counter[str] = Counter()
+    l = best = 0
+    for r, ch in enumerate(s):
+        count[ch] += 1                         # expand
+        while len(count) > k:                  # invalid -> shrink
+            count[s[l]] -= 1
+            if count[s[l]] == 0:
+                del count[s[l]]
+            l += 1
+        best = max(best, r - l + 1)            # valid -> record
+    return best
+
+def min_window(s: str, t: str) -> str:
+    need, missing = Counter(t), len(t)
+    l = start = 0
+    end = float('inf')
+    for r, ch in enumerate(s, 1):              # r is exclusive end
+        if need[ch] > 0:
+            missing -= 1
+        need[ch] -= 1
+        while missing == 0:                    # valid -> try to shrink
+            if r - l < end - start:
+                start, end = l, r
+            need[s[l]] += 1
+            if need[s[l]] > 0:
+                missing += 1
+            l += 1
+    return "" if end == float('inf') else s[start:end]
+
+def max_sum_fixed(nums: list[int], k: int) -> int:
+    window = best = sum(nums[:k])
+    for r in range(k, len(nums)):
+        window += nums[r] - nums[r - k]        # slide by one
+        best = max(best, window)
+    return best
+`),
+      cs(['`Counter` returns 0 for missing keys (C# `Dictionary` would throw).', '`enumerate(s, 1)` starts the index at 1.']),
+      vars(['Negative numbers break the "shrink when sum too big" logic → use prefix sum + hash map instead.', '"Exactly k" = atMost(k) − atMost(k−1) (Subarrays with K Different Integers).', 'Character Replacement: window valid while `len − maxFreq ≤ k`; maxFreq need not decrease.', 'Sliding Window Maximum needs a monotonic deque (links to pattern 6).', 'Off-by-one on window length: `r − l + 1`.']),
+      probs([
+        p('Best Time to Buy and Sell Stock', 'best-time-to-buy-and-sell-stock', E, 1), p('Maximum Average Subarray I', 'maximum-average-subarray-i', E, 0),
+        p('Longest Substring Without Repeating Characters', 'longest-substring-without-repeating-characters', M, 1),
+        p('Longest Repeating Character Replacement', 'longest-repeating-character-replacement', M, 1), p('Permutation in String', 'permutation-in-string', M, 1),
+        p('Find All Anagrams in a String', 'find-all-anagrams-in-a-string', M, 0), p('Minimum Size Subarray Sum', 'minimum-size-subarray-sum', M, 0),
+        p('Max Consecutive Ones III', 'max-consecutive-ones-iii', M, 0), p('Fruit Into Baskets', 'fruit-into-baskets', M, 0),
+        p('Minimum Window Substring', 'minimum-window-substring', H, 1), p('Sliding Window Maximum', 'sliding-window-maximum', H, 1),
+        p('Subarrays with K Different Integers', 'subarrays-with-k-different-integers', H, 0)
+      ]),
+      quiz([
+        ['Why is a sliding window O(n) despite the inner while loop?', ['It is not, it is O(n²)', 'Each index enters once and leaves once (amortised)', 'The inner loop runs at most once', 'Because of hashing'], 1, 'l only moves forward; total inner iterations ≤ n.'],
+        ['Subarray Sum Equals K with negative numbers — sliding window?', ['Yes', 'No — use prefix sums + hash map', 'Only if k > 0', 'Only if sorted'], 1, 'With negatives, expanding can decrease the sum, so shrinking decisions are not monotonic.'],
+        ['Count subarrays with exactly K distinct integers:', ['One window with == K', 'atMost(K) − atMost(K − 1)', 'Sort then two pointers', 'DP'], 1, 'Exact-count windows are not monotonic; the at-most trick makes them so.'],
+        ['Best Time to Buy and Sell Stock is a window where…', ['l = cheapest day so far, r = today', 'window size is fixed', 'l and r start at the ends', 'you need a heap'], 0, 'Move l to r whenever a new minimum price appears; profit = prices[r] − prices[l].']
+      ])
+    ]),
+
+    checkpoint(3, [
+      ['Given a string, return the length of the longest substring containing at most two distinct characters.', ['Arrays & Hashing', 'Two Pointers (opposite ends)', 'Sliding Window', 'Binary Search'], 2, 'Contiguous + "longest" + "at most k distinct" → variable sliding window.'],
+      ['Given an unsorted array, return true if any value appears at least twice within distance k of each other.', ['Sliding Window with a set (or hash map of last index)', 'Two Pointers opposite ends', 'Sorting + binary search', 'Stack'], 0, 'Contains Duplicate II: fixed-size window of k with a set, or map value → last index.'],
+      ['Sorted array: count pairs (i < j) with nums[i] + nums[j] < target.', ['Hash map', 'Two Pointers (opposite ends)', 'Sliding Window', 'Prefix Sum'], 1, 'If nums[l]+nums[r] < target, all pairs (l, l+1..r) count → add r−l, move l.'],
+      ['Given strings, return the list of strings that are isomorphic groups (same letter pattern, e.g. "egg" ~ "add").', ['Arrays & Hashing (group by normalised key)', 'Sliding Window', 'Two Pointers', 'Backtracking'], 0, 'Normalise each word to a pattern tuple (first-seen indices) and group by it.'],
+      ['Squares of a sorted array (with negatives) — return sorted squares in O(n).', ['Sort after squaring', 'Two Pointers from both ends, fill result from the back', 'Hash map', 'Sliding window'], 1, 'Largest squares are at the ends; compare |nums[l]| and |nums[r]|.']
+    ]),
+
+    // ───────────── 4
+    pat('Prefix Sum', 'Precompute running totals so any range sum is one subtraction; add a hash map to count subarrays by sum.', [
+      steps('Subarray Sum Equals K on nums = [1, 2, 3], k = 3', ['i (x)', 'prefix', 'prefix − k', 'count map before', 'found', 'total'], [
+        ['—', '0', '—', '{0: 1}', '—', '0'],
+        ['0 (1)', '1', '−2', '{0:1}', '0', '0'],
+        ['1 (2)', '3', '0', '{0:1, 1:1}', '1 ([1,2])', '1'],
+        ['2 (3)', '6', '3', '{0:1, 1:1, 3:1}', '1 ([3])', '2 ✔']
+      ]),
+      vis('Range sum from prefix array', `
+flowchart LR
+  N["nums: 3, 1, 4, 1, 5"] --> P["prefix: 0, 3, 4, 8, 9, 14"]
+  P --> Q["sum(nums[1..3]) = prefix[4] − prefix[1] = 9 − 3 = 6"]
+`, 'prefix[i] = sum of the first i elements; sum(l..r) = prefix[r+1] − prefix[l]. The leading 0 removes edge cases.'),
+      cues(['"Sum of subarray / range" asked many times (immutable array)', '"Number of subarrays whose sum equals / is divisible by k"', 'Negative numbers present (so sliding window fails)', '"Equal number of 0s and 1s" (map 0 → −1, then sum 0)', '2-D: "sum of sub-rectangle"']),
+      tmpl(`
+from collections import defaultdict
+from itertools import accumulate
+
+def build_prefix(nums: list[int]) -> list[int]:
+    return [0, *accumulate(nums)]                  # prefix[i] = sum(nums[:i])
+
+def range_sum(prefix: list[int], l: int, r: int) -> int:
+    return prefix[r + 1] - prefix[l]
+
+def subarray_sum_equals_k(nums: list[int], k: int) -> int:
+    seen = defaultdict(int)
+    seen[0] = 1                                    # empty prefix
+    total = prefix = 0
+    for x in nums:
+        prefix += x
+        total += seen[prefix - k]                  # subarrays ending here with sum k
+        seen[prefix] += 1
+    return total
+
+def build_prefix_2d(grid: list[list[int]]) -> list[list[int]]:
+    R, C = len(grid), len(grid[0])
+    P = [[0] * (C + 1) for _ in range(R + 1)]
+    for r in range(R):
+        for c in range(C):
+            P[r + 1][c + 1] = grid[r][c] + P[r][c + 1] + P[r + 1][c] - P[r][c]
+    return P   # sum(r1..r2, c1..c2) = P[r2+1][c2+1] - P[r1][c2+1] - P[r2+1][c1] + P[r1][c1]
+`),
+      cs(['`[[0] * C for _ in range(R)]` — never `[[0] * C] * R` (same inner list repeated R times).', '`itertools.accumulate` is a running-sum iterator; `*` unpacks it into the list.']),
+      vars(['Forgetting `seen[0] = 1` → misses subarrays that start at index 0.', 'Updating the map before querying → counts empty subarrays when k = 0.', 'Continuous Subarray Sum: store `prefix % k` → first index, and require length ≥ 2.', 'Contiguous Array: treat 0 as −1, store first index of each prefix, max length = i − first[prefix].', 'In Python, `%` of a negative is non-negative (−1 % 5 == 4); C# returns −1.']),
+      probs([
+        p('Range Sum Query - Immutable', 'range-sum-query-immutable', E, 0), p('Find Pivot Index', 'find-pivot-index', E, 0),
+        p('Subarray Sum Equals K', 'subarray-sum-equals-k', M, 0), p('Continuous Subarray Sum', 'continuous-subarray-sum', M, 0),
+        p('Range Sum Query 2D - Immutable', 'range-sum-query-2d-immutable', M, 0), p('Contiguous Array', 'contiguous-array', M, 0),
+        p('Number of Submatrices That Sum to Target', 'number-of-submatrices-that-sum-to-target', H, 0)
+      ]),
+      quiz([
+        ['Why initialise the count map with {0: 1}?', ['Avoid KeyError', 'To count subarrays starting at index 0', 'Required by defaultdict', 'Performance'], 1, 'prefix − k == 0 means the whole prefix itself sums to k.'],
+        ['Range sum query after O(n) preprocessing costs…', ['O(n)', 'O(log n)', 'O(1)', 'O(k)'], 2, 'One subtraction.'],
+        ['Contiguous Array (equal 0s and 1s) trick?', ['Sort first', 'Map 0 → −1 and find equal prefix sums furthest apart', 'Sliding window', 'Stack'], 1, 'Equal prefix sums at i and j mean the sum between them is 0.'],
+        ['`-7 % 3` in Python equals…', ['−1', '2', '1', 'Error'], 1, 'Python modulo takes the sign of the divisor — convenient for "divisible by k" prefix tricks. C# gives −1.']
+      ])
+    ]),
+
+    // ───────────── 5
+    pat('Binary Search (incl. on answer)', 'Halve a monotonic search space each step: O(log n). Works on sorted arrays AND on answer ranges where feasibility is monotonic.', [
+      steps('Search 9 in [-1, 0, 3, 5, 9, 12]', ['Step', 'lo', 'hi', 'mid (value)', 'Action'], [
+        ['1', '0', '5', '2 (3)', '3 < 9 → lo = 3'],
+        ['2', '3', '5', '4 (9)', 'found → return 4']
+      ]),
+      vis('Binary search on the answer (Koko Eating Bananas)', `
+flowchart LR
+  A["speeds 1 .. max(piles)"] --> B["feasible(speed)?<br/>hours ≤ h"]
+  B --> C["F F F F T T T T"]
+  C --> D["find FIRST True<br/>= minimum speed"]
+`, 'If "can we do it with X?" flips from False to True exactly once as X grows, binary search X.'),
+      cues(['Input sorted or rotated sorted', '"Find the minimum / maximum X such that …" (min speed, min capacity, max distance)', 'Constraints like n ≤ 10⁹ or values up to 10⁹ — you cannot scan', '"O(log n)" required', 'Answer range is monotonic even though the array is not sorted']),
+      tmpl(`
+from bisect import bisect_left, bisect_right
+from math import ceil
+
+def lower_bound(nums: list[int], target: int) -> int:
+    """First index with nums[i] >= target (== bisect_left)."""
+    lo, hi = 0, len(nums)                  # hi is exclusive
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if nums[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+def first_true(lo: int, hi: int, ok) -> int:
+    """Smallest x in [lo, hi] with ok(x) True; ok is F..F T..T."""
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if ok(mid):
+            hi = mid                       # mid might be the answer
+        else:
+            lo = mid + 1
+    return lo
+
+def min_eating_speed(piles: list[int], h: int) -> int:
+    return first_true(1, max(piles), lambda k: sum(ceil(p / k) for p in piles) <= h)
+
+def search_rotated(nums: list[int], target: int) -> int:
+    lo, hi = 0, len(nums) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if nums[mid] == target:
+            return mid
+        if nums[lo] <= nums[mid]:          # left half sorted
+            if nums[lo] <= target < nums[mid]:
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        else:                              # right half sorted
+            if nums[mid] < target <= nums[hi]:
+                lo = mid + 1
+            else:
+                hi = mid - 1
+    return -1
+`),
+      cs(['Python ints never overflow, so `(lo + hi) // 2` is safe (in C# use `lo + (hi - lo) / 2`).', '`bisect_left` / `bisect_right` are built-in lower/upper bound (C# `Array.BinarySearch` returns a bitwise complement instead).', '`//` is floor division; for negatives it rounds down, unlike C# `/` which truncates toward zero.']),
+      vars(['Mixing templates: `while lo < hi` with `hi = mid` vs `while lo <= hi` with `hi = mid − 1`. Pick one and stick to it.', 'Infinite loop when `lo = mid` with `mid = (lo+hi)//2` — use `(lo+hi+1)//2` for "last true".', 'Rotated array with duplicates: worst case O(n) (shrink `lo += 1` when `nums[lo]==nums[mid]==nums[hi]`).', 'Median of Two Sorted Arrays: binary search the partition of the smaller array.', 'Time-Based Key-Value Store: `bisect_right(timestamps, t) − 1`.']),
+      probs([
+        p('Binary Search', 'binary-search', E, 1), p('Search Insert Position', 'search-insert-position', E, 0), p('First Bad Version', 'first-bad-version', E, 0),
+        p('Sqrt(x)', 'sqrtx', E, 0),
+        p('Search a 2D Matrix', 'search-a-2d-matrix', M, 1), p('Koko Eating Bananas', 'koko-eating-bananas', M, 1),
+        p('Find Minimum in Rotated Sorted Array', 'find-minimum-in-rotated-sorted-array', M, 1), p('Search in Rotated Sorted Array', 'search-in-rotated-sorted-array', M, 1),
+        p('Time Based Key-Value Store', 'time-based-key-value-store', M, 1), p('Find First and Last Position of Element in Sorted Array', 'find-first-and-last-position-of-element-in-sorted-array', M, 0),
+        p('Capacity To Ship Packages Within D Days', 'capacity-to-ship-packages-within-d-days', M, 0),
+        p('Median of Two Sorted Arrays', 'median-of-two-sorted-arrays', H, 1), p('Split Array Largest Sum', 'split-array-largest-sum', H, 0)
+      ]),
+      quiz([
+        ['Capacity to Ship Packages: search range for capacity?', ['[0, sum]', '[max(weights), sum(weights)]', '[1, max(weights)]', '[min, max]'], 1, 'Capacity below the heaviest package is infeasible; the total sum always works in 1 day.'],
+        ['`bisect_left([1,2,2,2,5], 2)` returns…', ['1', '3', '4', '2'], 0, 'First index where 2 could be inserted keeping order = first 2.'],
+        ['Find Minimum in Rotated Sorted Array: compare nums[mid] with…', ['nums[0] only', 'nums[hi]', 'target', 'nums[mid+1] only'], 1, 'If nums[mid] > nums[hi] the minimum is right of mid; else it is at mid or left.'],
+        ['What makes "binary search on the answer" valid?', ['Sorted input', 'A monotonic feasibility function over the answer range', 'Distinct values', 'Small n'], 1, 'The predicate must flip once: F…F T…T.']
+      ])
+    ]),
+
+    // ───────────── 6
+    pat('Stack / Monotonic Stack', 'LIFO for nesting and "most recent unresolved" items; a monotonic stack finds the next greater/smaller element in O(n).', [
+      steps('Daily Temperatures [73, 74, 75, 71, 69, 72, 76, 73] (stack holds indices, temps decreasing)', ['i (t)', 'pops (answer[j] = i − j)', 'stack after (temps)'], [
+        ['0 (73)', '—', '[73]'],
+        ['1 (74)', '73 → ans[0]=1', '[74]'],
+        ['2 (75)', '74 → ans[1]=1', '[75]'],
+        ['3 (71)', '—', '[75, 71]'],
+        ['4 (69)', '—', '[75, 71, 69]'],
+        ['5 (72)', '69 → ans[4]=1, 71 → ans[3]=2', '[75, 72]'],
+        ['6 (76)', '72 → ans[5]=1, 75 → ans[2]=4', '[76]'],
+        ['7 (73)', '—', '[76, 73] → leftovers stay 0']
+      ]),
+      vis('Monotonic stack invariant', `
+flowchart LR
+  X["new element x"] --> Q{"stack top < x ?"}
+  Q -->|yes| P["pop top:<br/>x is its NEXT GREATER"]
+  P --> Q
+  Q -->|no| S["push x"]
+`, 'Each element is pushed and popped at most once → O(n).'),
+      cues(['"Valid parentheses", nesting, "decode k[...]"', '"Next greater / smaller element", "how many days until warmer"', '"Evaluate expression", "RPN", "calculator"', '"Largest rectangle", "span", "remove k digits to make smallest"', 'Collisions / cancellations (asteroids)']),
+      tmpl(`
+def next_greater(nums: list[int]) -> list[int]:
+    res = [-1] * len(nums)
+    stack: list[int] = []                  # indices, values decreasing
+    for i, x in enumerate(nums):
+        while stack and nums[stack[-1]] < x:
+            res[stack.pop()] = x           # x resolves everything smaller
+        stack.append(i)
+    return res
+
+def is_valid(s: str) -> bool:
+    pairs = {')': '(', ']': '[', '}': '{'}
+    stack: list[str] = []
+    for ch in s:
+        if ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+        else:
+            stack.append(ch)
+    return not stack
+
+def largest_rectangle(heights: list[int]) -> int:
+    stack: list[int] = []                  # indices, heights increasing
+    best = 0
+    for i, h in enumerate(heights + [0]):  # sentinel flushes the stack
+        while stack and heights[stack[-1]] >= h:
+            height = heights[stack.pop()]
+            left = stack[-1] + 1 if stack else 0
+            best = max(best, height * (i - left))
+        stack.append(i)
+    return best
+`),
+      cs(['A Python `list` is the stack: `append` / `pop()` / `stack[-1]` for peek (C# `Stack<T>.Push/Pop/Peek`).', '`not stack` checks emptiness.']),
+      vars(['Store **indices**, not values, when you need distances or widths.', 'Strict `<` vs `<=` decides how duplicates are handled — think about it explicitly.', 'Min Stack: store `(value, current_min)` pairs.', 'Car Fleet: sort by position descending, push arrival times; a car that arrives no later than the fleet ahead merges.', 'Circular arrays: iterate `2n` and use `i % n`.']),
+      probs([
+        p('Valid Parentheses', 'valid-parentheses', E, 1), p('Next Greater Element I', 'next-greater-element-i', E, 0),
+        p('Min Stack', 'min-stack', M, 1), p('Evaluate Reverse Polish Notation', 'evaluate-reverse-polish-notation', M, 1),
+        p('Daily Temperatures', 'daily-temperatures', M, 1), p('Car Fleet', 'car-fleet', M, 1), p('Decode String', 'decode-string', M, 0),
+        p('Asteroid Collision', 'asteroid-collision', M, 0), p('Online Stock Span', 'online-stock-span', M, 0),
+        p('Largest Rectangle in Histogram', 'largest-rectangle-in-histogram', H, 1), p('Basic Calculator', 'basic-calculator', H, 0)
+      ]),
+      quiz([
+        ['Next greater element: the stack is kept…', ['Increasing from bottom to top', 'Decreasing from bottom to top', 'Sorted by index only', 'Unordered'], 1, 'Elements waiting for a greater value; a larger x pops them.'],
+        ['Why append a 0 sentinel in Largest Rectangle in Histogram?', ['Avoid index errors', 'Forces all remaining bars to be popped and measured', 'Speeds up sorting', 'Handles negatives'], 1, 'Without it, bars left on the stack at the end are never evaluated.'],
+        ['Min Stack getMin in O(1): store…', ['A sorted copy', 'Each value with the minimum at that point', 'A heap', 'Only the global min'], 1, 'After a pop, the previous minimum is right there.'],
+        ['Total time of a monotonic stack pass over n elements?', ['O(n²)', 'O(n log n)', 'O(n)', 'O(log n)'], 2, 'Each index pushed once and popped at most once.']
+      ])
+    ]),
+
+    checkpoint(6, [
+      ['Given a sorted array and x, return the k closest elements to x.', ['Binary Search (find left bound of the k-window)', 'Monotonic stack', 'Prefix sum', 'Hash map'], 0, 'Binary search the start index in [0, n−k] comparing x − arr[mid] with arr[mid+k] − x (two pointers also works, O(n)).'],
+      ['Count the subarrays whose sum is divisible by k (values may be negative).', ['Sliding Window', 'Prefix Sum + hash map of remainders', 'Binary Search', 'Stack'], 1, 'Equal prefix remainders ⇒ the subarray between is divisible by k.'],
+      ['For each day\'s stock price, return the number of consecutive previous days with price ≤ today.', ['Two Pointers', 'Monotonic Stack', 'Sliding Window', 'Heap'], 1, 'Online Stock Span: pop smaller-or-equal prices and accumulate their spans.'],
+      ['Minimum number of days to make m bouquets of k adjacent flowers given bloom days.', ['Binary Search on the answer (days)', 'Greedy only', 'Prefix Sum', 'Stack'], 0, 'feasible(day) is monotonic — more days, more bloomed flowers.'],
+      ['Remove k digits from a number string to make it the smallest possible.', ['Monotonic Stack (increasing)', 'Sorting', 'Sliding Window', 'Binary Search'], 0, 'Pop larger previous digits while k > 0 — greedy with a monotonic increasing stack.']
+    ]),
+
+    // ───────────── 7
+    pat('Linked List (fast/slow, reversal)', 'Pointer manipulation: dummy heads, in-place reversal, and fast/slow pointers for middles and cycles.', [
+      vis('Reversing 1 → 2 → 3 in place', `
+flowchart TB
+  subgraph S0["start: prev = None, curr = 1"]
+    a1["1"] --> a2["2"] --> a3["3"] --> an["None"]
+  end
+  subgraph S1["after step 1: prev = 1, curr = 2"]
+    b1["1"] --> bn["None"]
+    b2["2"] --> b3["3"]
+  end
+  subgraph S3["end: prev = 3 is new head"]
+    c3["3"] --> c2["2"] --> c1["1"] --> cn["None"]
+  end
+  S0 --> S1 --> S3
+`, 'Each step: save next, point curr back to prev, advance prev and curr.'),
+      steps('Floyd cycle detection on 1 → 2 → 3 → 4 → 2 (cycle)', ['Step', 'slow', 'fast', 'Meet?'], [
+        ['0', '1', '1', '—'], ['1', '2', '3', 'no'], ['2', '3', '2', 'no'], ['3', '4', '4', 'yes → cycle']
+      ]),
+      cues(['Input is a `ListNode` head', '"Reverse", "reorder", "k-group"', '"Detect cycle", "find the middle", "n-th from end"', '"Merge sorted lists", "add numbers stored as lists"', '"Find the duplicate in [1..n] with O(1) space" — Floyd on indices']),
+      tmpl(`
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val, self.next = val, next
+
+def reverse(head: ListNode | None) -> ListNode | None:
+    prev, curr = None, head
+    while curr:
+        curr.next, prev, curr = prev, curr, curr.next   # evaluated right side first
+    return prev
+
+def middle(head: ListNode) -> ListNode:
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+    return slow                                         # second middle for even length
+
+def has_cycle(head: ListNode | None) -> bool:
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+        if slow is fast:
+            return True
+    return False
+
+def remove_nth_from_end(head: ListNode, n: int) -> ListNode | None:
+    dummy = ListNode(0, head)                           # dummy avoids head special-case
+    fast = slow = dummy
+    for _ in range(n + 1):
+        fast = fast.next
+    while fast:
+        slow, fast = slow.next, fast.next
+    slow.next = slow.next.next
+    return dummy.next
+`, 'The one-line reverse works because Python evaluates the whole right-hand tuple before assigning. Write it in three lines in an interview if it makes you nervous.'),
+      cs(['`is` compares identity (like `ReferenceEquals`); `==` calls `__eq__`.', 'No null-conditional `?.` — check `if node and node.next` explicitly.']),
+      vars(['Losing the rest of the list: always save `nxt = curr.next` before rewiring.', 'Forgetting the dummy node → messy special cases when the head changes.', 'Reorder List = find middle + reverse second half + merge alternately.', 'Find Duplicate Number: treat `nums[i]` as a next pointer; Floyd phase 2 finds the cycle entrance.', 'Copy List with Random Pointer: hash map old → new, or interleave copies.']),
+      probs([
+        p('Reverse Linked List', 'reverse-linked-list', E, 1), p('Merge Two Sorted Lists', 'merge-two-sorted-lists', E, 1), p('Linked List Cycle', 'linked-list-cycle', E, 1),
+        p('Reorder List', 'reorder-list', M, 1), p('Remove Nth Node From End of List', 'remove-nth-node-from-end-of-list', M, 1),
+        p('Add Two Numbers', 'add-two-numbers', M, 1), p('Find the Duplicate Number', 'find-the-duplicate-number', M, 1),
+        p('Copy List with Random Pointer', 'copy-list-with-random-pointer', M, 1), p('Reverse Nodes in k-Group', 'reverse-nodes-in-k-group', H, 1)
+      ]),
+      quiz([
+        ['Why use a dummy node?', ['Faster', 'Removes special cases when the head is removed or changes', 'Needed for recursion', 'Saves memory'], 1, 'All real nodes then have a predecessor.'],
+        ['After Floyd detects a meeting point, how do you find the cycle start?', ['Restart fast only', 'Move one pointer to head; advance both one step at a time until they meet', 'Count nodes', 'Reverse the list'], 1, 'Distance head→entry equals meeting point→entry (mod cycle length).'],
+        ['Space complexity of iterative reversal?', ['O(n)', 'O(log n)', 'O(1)', 'O(n²)'], 2, 'Only three pointers. Recursive reversal uses O(n) stack.'],
+        ['Remove N-th from end in one pass: fast starts how far ahead of slow (both at dummy)?', ['n', 'n + 1', 'n − 1', '2n'], 1, 'Then slow stops just before the node to delete.']
+      ])
+    ]),
+
+    // ───────────── 8
+    pat('Matrix / Grid', 'Index arithmetic, direction vectors and boundary shrinking on 2-D arrays.', [
+      steps('Spiral order of a 3×3 matrix [[1,2,3],[4,5,6],[7,8,9]]', ['Pass', 'top, bottom, left, right', 'Read', 'Output so far'], [
+        ['→ top row', '0, 2, 0, 2', '1 2 3; top = 1', '1 2 3'],
+        ['↓ right col', '1, 2, 0, 2', '6 9; right = 1', '1 2 3 6 9'],
+        ['← bottom row', '1, 2, 0, 1', '8 7; bottom = 1', '… 8 7'],
+        ['↑ left col', '1, 1, 0, 1', '4; left = 1', '… 4'],
+        ['→ top row', '1, 1, 1, 1', '5', '1 2 3 6 9 8 7 4 5 ✔']
+      ]),
+      vis('Rotate 90° clockwise = transpose + reverse each row', `
+flowchart LR
+  A["1 2 3<br/>4 5 6<br/>7 8 9"] -->|"transpose<br/>swap m[i][j], m[j][i]"| B["1 4 7<br/>2 5 8<br/>3 6 9"]
+  B -->|"reverse each row"| C["7 4 1<br/>8 5 2<br/>9 6 3"]
+`, 'In-place O(1) extra space.'),
+      cues(['"Matrix", "grid", "board", "image"', '"Rotate / transpose / spiral / diagonal"', '"In place" on a 2-D array (use first row/col as markers)', '"Neighbours", "4-directional" (then often BFS/DFS — pattern 13)', 'Sorted rows and columns (staircase search from top-right)']),
+      tmpl(`
+DIRS = [(0, 1), (1, 0), (0, -1), (-1, 0)]          # right, down, left, up
+
+def neighbours(grid, r, c):
+    R, C = len(grid), len(grid[0])
+    for dr, dc in DIRS:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < R and 0 <= nc < C:             # chained comparison
+            yield nr, nc
+
+def rotate(m: list[list[int]]) -> None:
+    n = len(m)
+    for i in range(n):
+        for j in range(i + 1, n):
+            m[i][j], m[j][i] = m[j][i], m[i][j]    # transpose
+    for row in m:
+        row.reverse()
+
+def search_sorted_matrix(m: list[list[int]], target: int) -> bool:
+    r, c = 0, len(m[0]) - 1                         # start top-right
+    while r < len(m) and c >= 0:
+        if m[r][c] == target:
+            return True
+        if m[r][c] > target:
+            c -= 1
+        else:
+            r += 1
+    return False
+`),
+      cs(['Chained comparisons `0 <= r < R` work in Python (not in C#).', '`zip(*m)` transposes (returns tuples): `[list(row) for row in zip(*m)]`.', 'Generators (`yield`) are like C# `IEnumerable` with `yield return`.']),
+      vars(['`[[0]*C]*R` aliasing bug — every row is the same list.', 'Set Matrix Zeroes in O(1) space: use row 0 / col 0 as flags plus one extra flag for row 0.', 'Game of Life in place: encode transitions (e.g. 2 = alive→dead, 3 = dead→alive).', 'Mixing up `R`/`C` on non-square grids.', 'Diagonal Traverse: cells on the same diagonal share `r + c`.']),
+      probs([
+        p('Flood Fill', 'flood-fill', E, 0),
+        p('Spiral Matrix', 'spiral-matrix', M, 1), p('Rotate Image', 'rotate-image', M, 1), p('Set Matrix Zeroes', 'set-matrix-zeroes', M, 1),
+        p('Game of Life', 'game-of-life', M, 0), p('Search a 2D Matrix II', 'search-a-2d-matrix-ii', M, 0), p('Diagonal Traverse', 'diagonal-traverse', M, 0)
+      ]),
+      quiz([
+        ['Search a 2D Matrix II (rows and columns sorted): start where?', ['Top-left', 'Top-right or bottom-left', 'Center', 'Any cell'], 1, 'From top-right, one comparison eliminates a row or a column: O(R + C).'],
+        ['`grid = [[0]*3]*3; grid[0][0] = 1` — what happens?', ['Only grid[0][0] is 1', 'grid[0][0], grid[1][0], grid[2][0] all become 1', 'Error', 'Nothing'], 1, 'All three rows are the same list object.'],
+        ['Rotate 90° counter-clockwise in place?', ['Transpose then reverse each row', 'Transpose then reverse the row order (or reverse each row then transpose)', 'Reverse rows only', 'Not possible in place'], 1, 'Clockwise = transpose + reverse rows\' contents; counter-clockwise = transpose + reverse the order of rows.'],
+        ['Cells on the same anti-diagonal share…', ['r − c', 'r + c', 'r * c', 'r'], 1, 'Use `r + c` as the group key (and `r − c` for main diagonals).']
+      ])
+    ]),
+
+    // ───────────── 9
+    pat('Trees (DFS/BFS, BST)', 'Recursion that returns information from subtrees (DFS) or level-by-level traversal with a queue (BFS). BSTs add ordering.', [
+      vis('DFS return values — max depth', `
+flowchart TB
+  A["3<br/>returns 1+max(1,2)=3"] --> B["9<br/>returns 1"]
+  A --> C["20<br/>returns 1+max(1,1)=2"]
+  C --> D["15<br/>returns 1"]
+  C --> E["7<br/>returns 1"]
+`, 'Post-order: each node combines answers from its children. Null returns 0.'),
+      steps('BFS level order on [3, 9, 20, null, null, 15, 7]', ['Level', 'queue at start', 'Output'], [
+        ['0', '[3]', '[3]'], ['1', '[9, 20]', '[9, 20]'], ['2', '[15, 7]', '[15, 7]']
+      ]),
+      cues(['Input `root: TreeNode`', '"Depth / height / diameter / balanced / path sum" → DFS returning a value', '"Level order", "right side view", "minimum depth", "zigzag" → BFS', '"BST", "k-th smallest", "validate" → in-order is sorted', '"Lowest common ancestor", "serialize", "construct from traversals"']),
+      tmpl(`
+from collections import deque
+
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val, self.left, self.right = val, left, right
+
+def max_depth(root: TreeNode | None) -> int:
+    if not root:
+        return 0
+    return 1 + max(max_depth(root.left), max_depth(root.right))
+
+def diameter(root: TreeNode | None) -> int:
+    best = 0
+    def height(node):                      # returns height, updates best on the side
+        nonlocal best
+        if not node:
+            return 0
+        l, r = height(node.left), height(node.right)
+        best = max(best, l + r)            # path through this node
+        return 1 + max(l, r)
+    height(root)
+    return best
+
+def level_order(root: TreeNode | None) -> list[list[int]]:
+    if not root:
+        return []
+    res, q = [], deque([root])
+    while q:
+        level = []
+        for _ in range(len(q)):            # exactly one level
+            node = q.popleft()
+            level.append(node.val)
+            if node.left: q.append(node.left)
+            if node.right: q.append(node.right)
+        res.append(level)
+    return res
+
+def is_valid_bst(node, lo=float('-inf'), hi=float('inf')) -> bool:
+    if not node:
+        return True
+    if not (lo < node.val < hi):
+        return False
+    return is_valid_bst(node.left, lo, node.val) and is_valid_bst(node.right, node.val, hi)
+`),
+      cs(['`nonlocal` lets a nested function assign to an enclosing variable (C# closures capture by reference automatically).', '`deque.popleft()` is O(1); `list.pop(0)` is O(n) — never use a list as a queue.', 'Default recursion limit is ~1000: deep skewed trees can hit it (`sys.setrecursionlimit` or iterate).']),
+      vars(['Validate BST by only comparing with direct children — wrong; pass (lo, hi) bounds down.', 'Diameter / max path sum: the value you **return** (one branch) differs from the value you **record** (both branches).', 'Max Path Sum: clamp negative branches with `max(0, gain)`.', 'LCA in BST uses ordering; LCA in a binary tree returns the node where left and right both find a target.', 'Construct from preorder + inorder: map value → inorder index for O(n).']),
+      probs([
+        p('Invert Binary Tree', 'invert-binary-tree', E, 1), p('Maximum Depth of Binary Tree', 'maximum-depth-of-binary-tree', E, 1), p('Same Tree', 'same-tree', E, 1),
+        p('Subtree of Another Tree', 'subtree-of-another-tree', E, 1), p('Diameter of Binary Tree', 'diameter-of-binary-tree', E, 1), p('Balanced Binary Tree', 'balanced-binary-tree', E, 1),
+        p('Lowest Common Ancestor of a Binary Search Tree', 'lowest-common-ancestor-of-a-binary-search-tree', M, 1),
+        p('Binary Tree Level Order Traversal', 'binary-tree-level-order-traversal', M, 1), p('Binary Tree Right Side View', 'binary-tree-right-side-view', M, 1),
+        p('Count Good Nodes in Binary Tree', 'count-good-nodes-in-binary-tree', M, 1), p('Validate Binary Search Tree', 'validate-binary-search-tree', M, 1),
+        p('Kth Smallest Element in a BST', 'kth-smallest-element-in-a-bst', M, 1),
+        p('Construct Binary Tree from Preorder and Inorder Traversal', 'construct-binary-tree-from-preorder-and-inorder-traversal', M, 1),
+        p('Lowest Common Ancestor of a Binary Tree', 'lowest-common-ancestor-of-a-binary-tree', M, 0),
+        p('Binary Tree Zigzag Level Order Traversal', 'binary-tree-zigzag-level-order-traversal', M, 0),
+        p('Binary Tree Maximum Path Sum', 'binary-tree-maximum-path-sum', H, 1), p('Serialize and Deserialize Binary Tree', 'serialize-and-deserialize-binary-tree', H, 1)
+      ]),
+      quiz([
+        ['In-order traversal of a BST yields…', ['Level order', 'Values in sorted order', 'Reverse sorted', 'Random order'], 1, 'Left, node, right — the basis of k-th smallest and validation.'],
+        ['Minimum depth of a binary tree — which traversal finishes earliest?', ['DFS always', 'BFS (stop at the first leaf)', 'In-order', 'Post-order'], 1, 'BFS reaches the shallowest leaf first.'],
+        ['Space complexity of recursive DFS on a tree of height h?', ['O(1)', 'O(h)', 'O(n²)', 'O(log n) always'], 1, 'Call stack depth = height: O(log n) balanced, O(n) skewed.'],
+        ['Max Path Sum: what does the helper return to its parent?', ['Best path through the node using both children', 'node.val + max(0, left_gain, right_gain) — one branch only', 'Sum of the subtree', 'Count of nodes'], 1, 'A path passing up to the parent can use only one child branch.']
+      ])
+    ]),
+
+    checkpoint(9, [
+      ['Given the head of a linked list, return true if it is a palindrome in O(1) extra space.', ['Stack', 'Linked List: find middle (fast/slow) + reverse second half + compare', 'Hash map', 'Binary search'], 1, 'Classic combination of two linked-list sub-patterns.'],
+      ['Return the average value of the nodes on each level of a binary tree.', ['DFS pre-order', 'BFS level order', 'In-order', 'Backtracking'], 1, 'Level-by-level processing is BFS with `for _ in range(len(q))`.'],
+      ['Count islands where an island is 4-directionally connected 1s in a grid.', ['Matrix / Grid + DFS/BFS flood fill', 'Prefix Sum', 'Two Pointers', 'Heap'], 0, 'Grid traversal; formally a graph problem (pattern 13) on a matrix.'],
+      ['Given a BST and a range [low, high], return the sum of values within the range.', ['BFS only', 'DFS using BST ordering to prune subtrees', 'Sort all values', 'Sliding window'], 1, 'Skip the left subtree when node.val < low, the right when node.val > high.'],
+      ['Given an n×n matrix, return all elements in diagonal zigzag order.', ['Matrix / Grid (group by r + c)', 'Stack', 'Binary Search', 'Trie'], 0, 'Index arithmetic on diagonals.']
+    ]),
+
+    // ───────────── 10
+    pat('Heap / Top-K / K-way merge', 'A heap gives O(log n) access to the current min (or max). Keep a size-k heap for top-k; push list heads for k-way merge.', [
+      steps('K-th largest with a min-heap of size k = 2 on [3, 2, 1, 5, 6, 4]', ['x', 'heap after push', 'size > k → pop smallest', 'heap'], [
+        ['3', '[3]', '—', '[3]'], ['2', '[2, 3]', '—', '[2, 3]'], ['1', '[1, 3, 2]', 'pop 1', '[2, 3]'],
+        ['5', '[2, 3, 5]', 'pop 2', '[3, 5]'], ['6', '[3, 5, 6]', 'pop 3', '[5, 6]'], ['4', '[4, 6, 5]', 'pop 4', '[5, 6] → answer heap[0] = 5 ✔']
+      ]),
+      vis('K-way merge of sorted lists', `
+flowchart LR
+  L1["list A: 1 → 4 → 5"] --> H(("min-heap<br/>(value, list_id, node)"))
+  L2["list B: 1 → 3 → 4"] --> H
+  L3["list C: 2 → 6"] --> H
+  H -->|"pop min, push its next"| O["output: 1 1 2 3 4 4 5 6"]
+`, 'Heap holds at most k items → O(N log k).'),
+      cues(['"K largest / smallest / most frequent / closest"', '"Merge k sorted …"', '"Median of a stream", "running median"', '"Schedule tasks", "always pick the cheapest / largest next"', 'Streaming input where you cannot sort everything']),
+      tmpl(`
+import heapq
+from collections import Counter
+
+def kth_largest(nums: list[int], k: int) -> int:
+    heap: list[int] = []
+    for x in nums:
+        heapq.heappush(heap, x)
+        if len(heap) > k:
+            heapq.heappop(heap)                 # drop the smallest
+    return heap[0]
+
+def top_k_frequent(nums: list[int], k: int) -> list[int]:
+    return [x for x, _ in Counter(nums).most_common(k)]   # uses a heap internally
+
+def merge_k_lists(lists):
+    heap = [(node.val, i, node) for i, node in enumerate(lists) if node]
+    heapq.heapify(heap)                         # O(k)
+    dummy = tail = ListNode()
+    while heap:
+        _, i, node = heapq.heappop(heap)        # i breaks ties (nodes aren't comparable)
+        tail.next = tail = node
+        if node.next:
+            heapq.heappush(heap, (node.next.val, i, node.next))
+    return dummy.next
+
+class MedianFinder:
+    def __init__(self):
+        self.lo: list[int] = []                 # max-heap via negatives
+        self.hi: list[int] = []                 # min-heap
+    def addNum(self, x: int) -> None:
+        heapq.heappush(self.lo, -x)
+        heapq.heappush(self.hi, -heapq.heappop(self.lo))
+        if len(self.hi) > len(self.lo):
+            heapq.heappush(self.lo, -heapq.heappop(self.hi))
+    def findMedian(self) -> float:
+        if len(self.lo) > len(self.hi):
+            return -self.lo[0]
+        return (-self.lo[0] + self.hi[0]) / 2
+`),
+      cs(['`heapq` is a **min-heap only** on a plain list; negate values for a max-heap (C# `PriorityQueue<T,P>` takes a priority/comparer).', 'Tuples compare element by element — add a tie-breaker index when later elements are not comparable.', '`heapq.nlargest(k, nums)` exists for one-off queries.']),
+      vars(['Using a max-heap of all n elements for top-k: O(n log n) instead of O(n log k).', 'Missing tie-breaker in tuples → `TypeError` comparing nodes.', 'Task Scheduler: formula `(maxFreq − 1) * (n + 1) + countOfMax`, or simulate with heap + cooldown queue.', 'Reorganize String: always place the most frequent char that is not the previous one.', 'Kth Largest in Array: quickselect is O(n) average — mention it.']),
+      probs([
+        p('Kth Largest Element in a Stream', 'kth-largest-element-in-a-stream', E, 1), p('Last Stone Weight', 'last-stone-weight', E, 1),
+        p('K Closest Points to Origin', 'k-closest-points-to-origin', M, 1), p('Kth Largest Element in an Array', 'kth-largest-element-in-an-array', M, 1),
+        p('Task Scheduler', 'task-scheduler', M, 1), p('Design Twitter', 'design-twitter', M, 1), p('Top K Frequent Words', 'top-k-frequent-words', M, 0),
+        p('Reorganize String', 'reorganize-string', M, 0), p('Find K Pairs with Smallest Sums', 'find-k-pairs-with-smallest-sums', M, 0),
+        p('Merge k Sorted Lists', 'merge-k-sorted-lists', H, 1), p('Find Median from Data Stream', 'find-median-from-data-stream', H, 1)
+      ]),
+      quiz([
+        ['Top-k largest of n items with a heap — complexity?', ['O(n log n)', 'O(n log k)', 'O(k log n)', 'O(n)'], 1, 'Each of n pushes/pops is on a heap of size ≤ k.'],
+        ['How do you get a max-heap with `heapq`?', ['`heapq.maxheap()`', 'Push negated values', 'Reverse the list', 'Use `sorted`'], 1, 'Push `-x`, read `-heap[0]`.'],
+        ['Merge k sorted lists with N total nodes — complexity?', ['O(N k)', 'O(N log k)', 'O(N log N)', 'O(k)'], 1, 'Heap of size k, one push/pop per node.'],
+        ['Median from data stream keeps…', ['One sorted list', 'Max-heap for lower half and min-heap for upper half', 'A BST only', 'A queue'], 1, 'Sizes balanced within 1; tops give the median in O(1).']
+      ])
+    ]),
+
+    // ───────────── 11
+    pat('Intervals & Line Sweep', 'Sort by start, then merge/compare with the last interval; or turn intervals into +1/−1 events and sweep.', [
+      steps('Merge [[1,3], [2,6], [8,10], [15,18]] (sorted by start)', ['Interval', 'last in result', 'Overlap? (start ≤ last.end)', 'result'], [
+        ['[1,3]', '—', '—', '[[1,3]]'], ['[2,6]', '[1,3]', 'yes → end = max(3,6)', '[[1,6]]'],
+        ['[8,10]', '[1,6]', 'no', '[[1,6],[8,10]]'], ['[15,18]', '[8,10]', 'no', '[[1,6],[8,10],[15,18]] ✔']
+      ]),
+      vis('Line sweep — how many meeting rooms?', `
+flowchart LR
+  E["events: (0,+1) (5,+1) (10,−1) (15,+1) (20,−1) (30,−1)"] --> S["sort by time;<br/>at equal time process −1 first"]
+  S --> R["running sum: 1 2 1 2 1 0"]
+  R --> A["max = 2 rooms"]
+`, 'Meetings [0,30], [5,10], [15,20]. The peak of the running sum is the answer.'),
+      cues(['Input is a list of `[start, end]` pairs', '"Merge / insert / remove overlapping"', '"Minimum rooms / arrows / platforms", "max concurrent"', '"Free time", "intersection of two schedules"', 'Calendar booking']),
+      tmpl(`
+import heapq
+
+def merge(intervals: list[list[int]]) -> list[list[int]]:
+    intervals.sort(key=lambda iv: iv[0])
+    res: list[list[int]] = []
+    for s, e in intervals:
+        if res and s <= res[-1][1]:
+            res[-1][1] = max(res[-1][1], e)       # overlap -> extend
+        else:
+            res.append([s, e])
+    return res
+
+def min_meeting_rooms(intervals: list[list[int]]) -> int:
+    events = []
+    for s, e in intervals:
+        events += [(s, 1), (e, -1)]
+    events.sort()                                  # (t, -1) sorts before (t, +1): end frees a room first
+    rooms = best = 0
+    for _, d in events:
+        rooms += d
+        best = max(best, rooms)
+    return best
+
+def min_rooms_heap(intervals: list[list[int]]) -> int:
+    ends: list[int] = []                           # min-heap of end times in use
+    for s, e in sorted(intervals):
+        if ends and ends[0] <= s:
+            heapq.heapreplace(ends, e)             # reuse the room that freed earliest
+        else:
+            heapq.heappush(ends, e)
+    return len(ends)
+
+def erase_overlap_intervals(intervals: list[list[int]]) -> int:
+    intervals.sort(key=lambda iv: iv[1])           # greedy: keep earliest-ending
+    removed, end = 0, float('-inf')
+    for s, e in intervals:
+        if s >= end:
+            end = e
+        else:
+            removed += 1
+    return removed
+`),
+      cs(['`list.sort(key=...)` with a lambda replaces `Comparison<T>` / LINQ `OrderBy`.', 'Tuples sort lexicographically, which gives tie-breaking for free.']),
+      vars(['Touching intervals: does `[1,2]` and `[2,3]` overlap? Read the problem — it changes `<` vs `<=`.', 'Non-overlapping Intervals / arrows: sort by **end**, not start.', 'Insert Interval: three phases — before, overlapping (merge), after — O(n) without re-sorting.', 'Interval List Intersections: two pointers; advance the one that ends first.', 'Minimum Interval to Include Each Query: sort queries + min-heap of (size, end).']),
+      probs([
+        p('Meeting Rooms', 'meeting-rooms', E, 1, 1),
+        p('Insert Interval', 'insert-interval', M, 1), p('Merge Intervals', 'merge-intervals', M, 1), p('Non-overlapping Intervals', 'non-overlapping-intervals', M, 1),
+        p('Meeting Rooms II', 'meeting-rooms-ii', M, 1, 1), p('Minimum Number of Arrows to Burst Balloons', 'minimum-number-of-arrows-to-burst-balloons', M, 0),
+        p('Interval List Intersections', 'interval-list-intersections', M, 0),
+        p('Minimum Interval to Include Each Query', 'minimum-interval-to-include-each-query', H, 1)
+      ]),
+      quiz([
+        ['Merge Intervals complexity?', ['O(n)', 'O(n log n)', 'O(n²)', 'O(log n)'], 1, 'Dominated by sorting.'],
+        ['Minimum removals to make intervals non-overlapping — sort by…', ['Start', 'End', 'Length', 'Input order'], 1, 'Keeping the interval that ends earliest leaves the most room (exchange argument).'],
+        ['Line sweep for rooms: at equal times, process…', ['Starts first', 'Ends first (if [a,b] and [b,c] can share a room)', 'Random order', 'Longest first'], 1, 'Ending before starting at the same time avoids counting a false overlap.'],
+        ['Meeting Rooms II with a heap stores…', ['Start times', 'End times of rooms in use', 'Durations', 'Indices'], 1, 'The earliest-ending room is the one to reuse.']
+      ])
+    ]),
+
+    // ───────────── 12
+    pat('Backtracking', 'Build candidates one choice at a time; recurse; undo the choice. Prune branches that cannot succeed.', [
+      vis('Recursion tree — subsets of [1, 2, 3]', `
+flowchart TB
+  R["[]"] -->|"take 1"| A["[1]"]
+  R -->|"skip 1"| B["[]"]
+  A -->|"take 2"| A1["[1,2]"]
+  A -->|"skip 2"| A2["[1]"]
+  B -->|"take 2"| B1["[2]"]
+  B -->|"skip 2"| B2["[]"]
+  A1 --> L1["[1,2,3]"] & L2["[1,2]"]
+  A2 --> L3["[1,3]"] & L4["[1]"]
+  B1 --> L5["[2,3]"] & L6["[2]"]
+  B2 --> L7["[3]"] & L8["[]"]
+`, '2ⁿ leaves = 2ⁿ subsets. Each root-to-leaf path is one sequence of take/skip decisions.'),
+      cues(['"Return ALL combinations / permutations / subsets / partitions"', '"Generate all valid …" (parentheses, IPs, boards)', 'Small n (≤ 15–20) — exponential is expected', '"N-Queens", "Sudoku", "word search on a board"', 'Count vs list: counting might be DP instead']),
+      tmpl(`
+def subsets(nums: list[int]) -> list[list[int]]:
+    res, path = [], []
+    def dfs(i: int) -> None:
+        if i == len(nums):
+            res.append(path[:])             # copy! path keeps changing
+            return
+        path.append(nums[i])                # choose
+        dfs(i + 1)                          # explore
+        path.pop()                          # un-choose
+        dfs(i + 1)                          # skip
+    dfs(0)
+    return res
+
+def combination_sum(cands: list[int], target: int) -> list[list[int]]:
+    cands.sort()
+    res, path = [], []
+    def dfs(start: int, remain: int) -> None:
+        if remain == 0:
+            res.append(path[:])
+            return
+        for i in range(start, len(cands)):
+            if cands[i] > remain:
+                break                       # prune: sorted, so the rest are too big
+            if i > start and cands[i] == cands[i - 1]:
+                continue                    # skip duplicates (Combination Sum II)
+            path.append(cands[i])
+            dfs(i, remain - cands[i])       # i: reuse allowed; i + 1: each used once
+            path.pop()
+    dfs(0, target)
+    return res
+
+def permutations(nums: list[int]) -> list[list[int]]:
+    res, path, used = [], [], [False] * len(nums)
+    def dfs() -> None:
+        if len(path) == len(nums):
+            res.append(path[:])
+            return
+        for i, x in enumerate(nums):
+            if used[i]:
+                continue
+            used[i] = True; path.append(x)
+            dfs()
+            used[i] = False; path.pop()
+    dfs()
+    return res
+`),
+      cs(['`path[:]` copies a list (C# `new List<int>(path)`); appending `path` itself stores a reference that ends up empty.', 'Nested functions capture outer variables; mutating a list is fine, rebinding an int needs `nonlocal`.']),
+      vars(['Appending `path` instead of `path[:]` → result full of empty lists.', 'Duplicates: sort first, then `if i > start and a[i] == a[i-1]: continue`.', 'Word Search: mark the cell visited (e.g. `board[r][c] = "#"`) and restore it after.', 'N-Queens: track used columns, `r − c` and `r + c` diagonals in sets for O(1) checks.', 'Complexity: subsets O(n·2ⁿ), permutations O(n·n!).']),
+      probs([
+        p('Subsets', 'subsets', M, 1), p('Combination Sum', 'combination-sum', M, 1), p('Permutations', 'permutations', M, 1),
+        p('Subsets II', 'subsets-ii', M, 1), p('Combination Sum II', 'combination-sum-ii', M, 1), p('Word Search', 'word-search', M, 1),
+        p('Palindrome Partitioning', 'palindrome-partitioning', M, 1), p('Letter Combinations of a Phone Number', 'letter-combinations-of-a-phone-number', M, 1),
+        p('Generate Parentheses', 'generate-parentheses', M, 1), p('N-Queens', 'n-queens', H, 1), p('Sudoku Solver', 'sudoku-solver', H, 0)
+      ]),
+      quiz([
+        ['Why `res.append(path[:])` and not `res.append(path)`?', ['Style only', 'path is mutated later; you must store a snapshot', 'Faster', 'Avoids recursion'], 1, 'Without a copy every stored entry is the same list object.'],
+        ['Number of subsets of n distinct elements?', ['n!', '2ⁿ', 'n²', 'n'], 1, 'Each element: take or skip.'],
+        ['Combination Sum (reuse allowed): recurse with index…', ['i + 1', 'i', '0', 'start + 1'], 1, 'Staying at i allows the same candidate again; i + 1 forbids reuse.'],
+        ['Generate Parentheses: when can you add ")"?', ['Always', 'When close < open', 'When open < n', 'Only at the end'], 1, 'Add "(" while open < n; add ")" while close < open.']
+      ])
+    ]),
+
+    checkpoint(12, [
+      ['Return all possible valid IP addresses formed by inserting dots into a digit string.', ['Backtracking', 'Sliding Window', 'Heap', 'Intervals'], 0, 'Generate all → choose segment lengths 1–3 with validity pruning.'],
+      ['Given employee schedules (lists of intervals), return common free time.', ['Intervals: merge all, then gaps', 'Backtracking', 'Binary search', 'Trie'], 0, 'Employee Free Time: flatten, sort, merge, report the gaps.'],
+      ['Return the k most frequent words, ties broken alphabetically.', ['Heap / Top-K', 'Two Pointers', 'Line sweep', 'Stack'], 0, 'Counter + heap with key (−freq, word).'],
+      ['Car Pooling: trips [passengers, from, to]; can a car of capacity C do them all?', ['Line sweep / difference array', 'Backtracking', 'Heap only', 'DFS'], 0, 'Add passengers at `from`, subtract at `to`; running sum must stay ≤ C.'],
+      ['Find the k-th smallest element in an n×n matrix with sorted rows and columns.', ['Heap (k-way merge of rows) or Binary Search on value', 'Backtracking', 'Prefix sum', 'Stack'], 0, 'Both are accepted; heap is O(k log n), value binary search O(n log(max−min)).']
+    ]),
+
+    // ───────────── 13
+    pat('Graphs (BFS/DFS, Union-Find, Topological Sort)', 'Model the problem as nodes + edges; BFS for shortest unweighted paths, DFS for exploration, Union-Find for connectivity, topological sort for dependencies.', [
+      vis('Course Schedule as a DAG — Kahn\'s topological sort', `
+flowchart LR
+  C0["0<br/>indeg 0"] --> C1["1<br/>indeg 1"]
+  C0 --> C2["2<br/>indeg 1"]
+  C1 --> C3["3<br/>indeg 2"]
+  C2 --> C3
+`, 'Queue all in-degree-0 nodes; pop, append to order, decrement neighbours. If order has fewer than n nodes → a cycle exists.'),
+      steps('Kahn\'s algorithm on the graph above', ['Step', 'queue', 'pop', 'in-degree changes', 'order'], [
+        ['1', '[0]', '0', '1: 1→0, 2: 1→0', '[0]'], ['2', '[1, 2]', '1', '3: 2→1', '[0, 1]'], ['3', '[2]', '2', '3: 1→0', '[0, 1, 2]'], ['4', '[3]', '3', '—', '[0, 1, 2, 3] ✔']
+      ]),
+      cues(['"Network", "connections", "prerequisites", "dependencies", "friends", "islands"', '"Shortest path / minimum steps" with unweighted moves → BFS', '"Order of tasks / courses", "detect cycle in dependencies" → topological sort', '"Number of connected components", "redundant edge", "merge accounts" → Union-Find', 'Grid with moves → implicit graph']),
+      tmpl(`
+from collections import defaultdict, deque
+
+def num_islands(grid: list[list[str]]) -> int:
+    R, C = len(grid), len(grid[0])
+    count = 0
+    for r in range(R):
+        for c in range(C):
+            if grid[r][c] != '1':
+                continue
+            count += 1
+            grid[r][c] = '0'                        # mark visited when ENQUEUED
+            q = deque([(r, c)])
+            while q:
+                x, y = q.popleft()
+                for nx, ny in ((x+1, y), (x-1, y), (x, y+1), (x, y-1)):
+                    if 0 <= nx < R and 0 <= ny < C and grid[nx][ny] == '1':
+                        grid[nx][ny] = '0'
+                        q.append((nx, ny))
+    return count
+
+def topo_order(n: int, edges: list[tuple[int, int]]) -> list[int]:
+    graph, indeg = defaultdict(list), [0] * n
+    for a, b in edges:                              # a must come before b
+        graph[a].append(b)
+        indeg[b] += 1
+    q = deque(i for i in range(n) if indeg[i] == 0)
+    order = []
+    while q:
+        u = q.popleft()
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                q.append(v)
+    return order if len(order) == n else []         # [] -> cycle
+
+class DSU:
+    def __init__(self, n: int):
+        self.parent, self.rank = list(range(n)), [0] * n
+    def find(self, x: int) -> int:
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]   # path halving
+            x = self.parent[x]
+        return x
+    def union(self, a: int, b: int) -> bool:
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False                            # already connected -> this edge makes a cycle
+        if self.rank[ra] < self.rank[rb]:
+            ra, rb = rb, ra
+        self.parent[rb] = ra
+        self.rank[ra] += self.rank[ra] == self.rank[rb]
+        return True
+`),
+      cs(['`defaultdict(list)` is the idiomatic adjacency list (C# `Dictionary<int, List<int>>` with manual init).', '`True` adds as 1 in arithmetic (`rank += cond`).', 'Recursive DFS on big grids can hit the recursion limit — prefer iterative BFS/DFS in Python.']),
+      vars(['Marking visited when **dequeued** instead of enqueued → duplicates in the queue, TLE.', 'Directed-graph cycle detection needs 3 colours (unvisited / visiting / done), not a plain visited set.', 'Multi-source BFS (Rotting Oranges, Walls and Gates): enqueue all sources at time 0.', 'Pacific Atlantic: BFS inward from each ocean\'s border, intersect the reachable sets.', 'Word Ladder: generic patterns like `h*t` as adjacency keys; consider bidirectional BFS.']),
+      probs([
+        p('Find if Path Exists in Graph', 'find-if-path-exists-in-graph', E, 0),
+        p('Number of Islands', 'number-of-islands', M, 1), p('Max Area of Island', 'max-area-of-island', M, 1), p('Clone Graph', 'clone-graph', M, 1),
+        p('Walls and Gates', 'walls-and-gates', M, 1, 1), p('Rotting Oranges', 'rotting-oranges', M, 1), p('Pacific Atlantic Water Flow', 'pacific-atlantic-water-flow', M, 1),
+        p('Surrounded Regions', 'surrounded-regions', M, 1), p('Course Schedule', 'course-schedule', M, 1), p('Course Schedule II', 'course-schedule-ii', M, 1),
+        p('Graph Valid Tree', 'graph-valid-tree', M, 1, 1), p('Number of Connected Components in an Undirected Graph', 'number-of-connected-components-in-an-undirected-graph', M, 1, 1),
+        p('Redundant Connection', 'redundant-connection', M, 1), p('Accounts Merge', 'accounts-merge', M, 0), p('Evaluate Division', 'evaluate-division', M, 0),
+        p('Shortest Path in Binary Matrix', 'shortest-path-in-binary-matrix', M, 0),
+        p('Word Ladder', 'word-ladder', H, 1), p('Alien Dictionary', 'alien-dictionary', H, 1, 1)
+      ]),
+      quiz([
+        ['Shortest path in an unweighted grid — which algorithm?', ['DFS', 'BFS', 'Dijkstra required', 'Topological sort'], 1, 'BFS explores in distance order when every edge costs 1.'],
+        ['Kahn\'s algorithm produced 5 of 6 nodes. Meaning?', ['Bug', 'The graph has a cycle', 'Graph is disconnected', 'Two valid orders'], 1, 'Nodes in a cycle never reach in-degree 0.'],
+        ['Union-Find with path compression + union by rank: amortised cost per op?', ['O(log n)', 'Nearly O(1) — α(n)', 'O(n)', 'O(n log n)'], 1, 'Inverse Ackermann — effectively constant.'],
+        ['Graph Valid Tree (n nodes) requires…', ['n edges and no cycle', 'Exactly n − 1 edges and fully connected (no cycle)', 'A root node', 'Sorted edges'], 1, 'A tree on n nodes has n − 1 edges and is connected; union returning False means a cycle.']
+      ])
+    ]),
+
+    // ───────────── 14
+    pat('Advanced Graphs (Dijkstra, MST)', 'Weighted shortest paths with a min-heap (Dijkstra); minimum spanning trees with Prim (heap) or Kruskal (sort + Union-Find).', [
+      vis('Weighted graph for Dijkstra from A', `
+flowchart LR
+  A((A)) -->|4| B((B))
+  A -->|1| C((C))
+  C -->|2| B
+  B -->|1| D((D))
+  C -->|5| D
+`, 'Directed edges with weights.'),
+      steps('Dijkstra from A (heap of (dist, node))', ['Pop', 'dist after relaxing', 'heap after'], [
+        ['(0, A)', 'A=0, B=4, C=1', '[(1,C), (4,B)]'],
+        ['(1, C)', 'B=min(4, 1+2)=3, D=1+5=6', '[(3,B), (4,B), (6,D)]'],
+        ['(3, B)', 'D=min(6, 3+1)=4', '[(4,B), (4,D), (6,D)]'],
+        ['(4, B)', 'stale (4 > 3) → skip', '[(4,D), (6,D)]'],
+        ['(4, D)', 'final: A0 B3 C1 D4 ✔', '[(6,D)] → stale']
+      ]),
+      cues(['Weighted edges, "minimum cost / time / effort" path', '"Network delay", "cheapest flight"', '"Connect all points with minimum total cost" → MST', '"At most k stops" → Bellman-Ford / BFS by layers', '"Minimise the maximum edge on a path" → Dijkstra with max, or binary search + BFS']),
+      tmpl(`
+import heapq
+from collections import defaultdict
+
+def dijkstra(n: int, edges: list[tuple[int, int, int]], src: int) -> list[float]:
+    graph = defaultdict(list)
+    for u, v, w in edges:
+        graph[u].append((v, w))
+    dist = [float('inf')] * n
+    dist[src] = 0
+    heap = [(0, src)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]:
+            continue                                # stale entry
+        for v, w in graph[u]:
+            nd = d + w
+            if nd < dist[v]:
+                dist[v] = nd
+                heapq.heappush(heap, (nd, v))
+    return dist
+
+def prim_mst_cost(points: list[list[int]]) -> int:
+    n, seen, total = len(points), set(), 0
+    heap = [(0, 0)]                                 # (cost to connect, node)
+    while len(seen) < n:
+        cost, u = heapq.heappop(heap)
+        if u in seen:
+            continue
+        seen.add(u)
+        total += cost
+        for v in range(n):
+            if v not in seen:
+                d = abs(points[u][0] - points[v][0]) + abs(points[u][1] - points[v][1])
+                heapq.heappush(heap, (d, v))
+    return total
+`),
+      cs(['`float(\'inf\')` is the idiomatic infinity (C# `int.MaxValue` risks overflow on addition).', 'Tuples `(dist, node)` give heap ordering by distance without a comparer.']),
+      vars(['Dijkstra fails with negative edge weights → Bellman-Ford.', 'Forgetting the stale-entry check → still correct but slower (and wrong with some variants).', 'Cheapest Flights Within K Stops: plain Dijkstra on cost can prune paths with fewer stops → use Bellman-Ford for k+1 rounds (copy the array each round) or state (node, stops).', 'Swim in Rising Water / Path With Minimum Effort: Dijkstra where path cost = max edge, not sum.', 'Kruskal: sort edges, add if `union` succeeds, stop at n − 1 edges.']),
+      probs([
+        p('Network Delay Time', 'network-delay-time', M, 1), p('Min Cost to Connect All Points', 'min-cost-to-connect-all-points', M, 1),
+        p('Cheapest Flights Within K Stops', 'cheapest-flights-within-k-stops', M, 1), p('Path With Minimum Effort', 'path-with-minimum-effort', M, 0),
+        p('Swim in Rising Water', 'swim-in-rising-water', H, 1)
+      ]),
+      quiz([
+        ['Dijkstra with a binary heap — complexity?', ['O(V²) always', 'O((V + E) log V)', 'O(E)', 'O(V E)'], 1, 'Each edge relaxation may push onto the heap.'],
+        ['Graph has negative edge weights (no negative cycles). Use…', ['Dijkstra', 'Bellman-Ford', 'BFS', 'Prim'], 1, 'Dijkstra\'s greedy finalisation breaks with negative edges.'],
+        ['Kruskal\'s MST needs…', ['A heap of nodes', 'Edges sorted by weight + Union-Find', 'Topological order', 'DFS only'], 1, 'Add the cheapest edge that does not form a cycle.'],
+        ['Path With Minimum Effort: path cost is…', ['Sum of height differences', 'Maximum height difference along the path', 'Number of steps', 'Minimum difference'], 1, 'Dijkstra still works with `max` instead of `+` because it is monotonic.']
+      ])
+    ]),
+
+    // ───────────── 15
+    pat('1-D Dynamic Programming', 'Overlapping subproblems + optimal substructure. Define dp[i], a transition from smaller i, base cases, and an order.', [
+      steps('House Robber on [2, 7, 9, 3, 1]: dp[i] = max(dp[i−1], dp[i−2] + nums[i])', ['i', 'nums[i]', 'dp[i−2] + nums[i]', 'dp[i−1]', 'dp[i]'], [
+        ['0', '2', '2', '—', '2'], ['1', '7', '7', '2', '7'], ['2', '9', '2 + 9 = 11', '7', '11'], ['3', '3', '7 + 3 = 10', '11', '11'], ['4', '1', '11 + 1 = 12', '11', '12 ✔']
+      ]),
+      vis('The DP recipe', `
+flowchart LR
+  S["1. State<br/>dp[i] means…"] --> T["2. Transition<br/>dp[i] from dp[i−1], dp[i−2]…"]
+  T --> B["3. Base cases"]
+  B --> O["4. Order<br/>small → large"]
+  O --> A["5. Answer<br/>dp[n] / max(dp)"]
+  A --> SP["6. Space<br/>keep only what the transition reads"]
+`, 'Say these six steps out loud in the interview before coding.'),
+      cues(['"Number of ways", "minimum cost", "maximum profit", "can you reach / form"', 'Choices at each step that affect later steps (take / skip)', 'Brute-force recursion recomputes the same arguments', '"Longest increasing …", "decode", "word break", "coin change"', 'Greedy counter-example exists (e.g. coins [1, 3, 4], amount 6)']),
+      tmpl(`
+from functools import cache
+
+def rob(nums: list[int]) -> int:
+    prev2 = prev1 = 0                       # dp[i-2], dp[i-1]
+    for x in nums:
+        prev2, prev1 = prev1, max(prev1, prev2 + x)
+    return prev1
+
+def coin_change(coins: list[int], amount: int) -> int:
+    INF = float('inf')
+    dp = [0] + [INF] * amount               # dp[a] = min coins to make a
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c <= a:
+                dp[a] = min(dp[a], dp[a - c] + 1)
+    return -1 if dp[amount] == INF else dp[amount]
+
+def word_break(s: str, words: list[str]) -> bool:
+    wordset = set(words)
+    @cache                                  # top-down memoisation
+    def ok(i: int) -> bool:
+        if i == len(s):
+            return True
+        return any(s[i:j] in wordset and ok(j) for j in range(i + 1, len(s) + 1))
+    return ok(0)
+
+def length_of_lis(nums: list[int]) -> int:
+    from bisect import bisect_left
+    tails: list[int] = []                   # tails[k] = smallest tail of an IS of length k+1
+    for x in nums:
+        i = bisect_left(tails, x)
+        if i == len(tails):
+            tails.append(x)
+        else:
+            tails[i] = x
+    return len(tails)                       # O(n log n)
+`),
+      cs(['`@functools.cache` memoises a function by its arguments (C# needs a manual `Dictionary`). Arguments must be hashable.', 'Tuple assignment `a, b = b, f(a, b)` updates rolling variables without temps.']),
+      vars(['Wrong state definition is the #1 failure — write "dp[i] = …" in words first.', 'Coin Change: greedy fails; also initialise with infinity, not 0.', 'House Robber II (circular): answer = max(rob(nums[1:]), rob(nums[:-1])).', 'Decode Ways: "0" cannot stand alone; "10"–"26" valid as pairs.', 'Maximum Product Subarray: track both max and min (negatives flip).']),
+      probs([
+        p('Climbing Stairs', 'climbing-stairs', E, 1), p('Min Cost Climbing Stairs', 'min-cost-climbing-stairs', E, 1),
+        p('House Robber', 'house-robber', M, 1), p('House Robber II', 'house-robber-ii', M, 1), p('Longest Palindromic Substring', 'longest-palindromic-substring', M, 1),
+        p('Palindromic Substrings', 'palindromic-substrings', M, 1), p('Decode Ways', 'decode-ways', M, 1), p('Coin Change', 'coin-change', M, 1),
+        p('Maximum Product Subarray', 'maximum-product-subarray', M, 1), p('Word Break', 'word-break', M, 1),
+        p('Longest Increasing Subsequence', 'longest-increasing-subsequence', M, 1)
+      ]),
+      quiz([
+        ['Coins [1, 3, 4], amount 6: greedy (largest first) gives…', ['2 coins', '3 coins (4+1+1) — but optimal is 2 (3+3)', '1 coin', 'Impossible'], 1, 'Greedy fails, so this needs DP.'],
+        ['Climbing Stairs dp[i] = ?', ['dp[i−1] × 2', 'dp[i−1] + dp[i−2]', 'dp[i−2]', 'i'], 1, 'Last step was either 1 or 2 stairs.'],
+        ['Maximum Product Subarray needs to track…', ['Only the max so far', 'Both current max and current min', 'A prefix sum', 'A stack'], 1, 'A negative number turns the min into the max.'],
+        ['LIS in O(n log n) uses…', ['A heap', 'Patience sorting: tails array + binary search', 'Two pointers', 'Union-Find'], 1, 'tails stays sorted, so bisect finds where x goes.']
+      ])
+    ]),
+
+    checkpoint(15, [
+      ['Minimum number of perfect squares that sum to n.', ['1-D DP (like Coin Change with square "coins")', 'Greedy', 'Binary search', 'Dijkstra'], 0, 'Perfect Squares: dp[a] = min(dp[a − s] + 1). BFS on remainders also works.'],
+      ['Given a list of equations a / b = k, answer queries x / y.', ['Graph: weighted edges + DFS/BFS (or weighted Union-Find)', 'DP', 'Heap', 'Sliding window'], 0, 'Evaluate Division: multiply edge weights along a path.'],
+      ['Minimum time for a signal from node k to reach all nodes in a weighted directed network.', ['BFS', 'Dijkstra', 'Topological sort', 'Union-Find'], 1, 'Network Delay Time: max over Dijkstra distances.'],
+      ['Order tasks given pairs "a must happen before b"; return any valid order or detect impossibility.', ['Topological sort', 'Dijkstra', 'DP', 'Backtracking'], 0, 'Dependencies ⇒ DAG ⇒ Kahn\'s algorithm.'],
+      ['Count the ways to reach step n taking 1, 2 or 3 steps at a time.', ['Backtracking listing all paths', '1-D DP', 'Greedy', 'Graph BFS'], 1, 'dp[i] = dp[i−1] + dp[i−2] + dp[i−3]; counting (not listing) ⇒ DP.']
+    ]),
+
+    // ───────────── 16
+    pat('2-D DP (grid, knapsack, strings)', 'Two indices of state: grid positions, (item, capacity), or (i in s, j in t).', [
+      steps('Longest Common Subsequence of "abcde" and "ace" (dp[i][j] = LCS of s[:i], t[:j])', ['', '""', 'a', 'c', 'e'], [
+        ['""', '0', '0', '0', '0'], ['a', '0', '1', '1', '1'], ['b', '0', '1', '1', '1'], ['c', '0', '1', '2', '2'], ['d', '0', '1', '2', '2'], ['e', '0', '1', '2', '3 ✔']
+      ]),
+      vis('LCS transition', `
+flowchart LR
+  Q{"s[i-1] == t[j-1] ?"} -->|yes| D["dp[i][j] = dp[i-1][j-1] + 1<br/>(diagonal)"]
+  Q -->|no| M["dp[i][j] = max(dp[i-1][j], dp[i][j-1])<br/>(up or left)"]
+`, 'Edit distance uses the same grid with min over insert / delete / replace.'),
+      cues(['Two strings compared: "common subsequence", "edit distance", "interleaving", "distinct subsequences", "regex match"', 'Grid paths: "number of paths", "minimum path sum" moving right/down', 'Knapsack: "subset with sum", "partition into equal sums", "target sum with +/−", "coin change ways"', 'Stock problems with states (holding / not holding / cooldown)', '"Maximal square / rectangle of 1s"']),
+      tmpl(`
+def lcs(s: str, t: str) -> int:
+    m, n = len(s), len(t)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if s[i - 1] == t[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[m][n]
+
+def edit_distance(a: str, b: str) -> int:
+    m, n = len(a), len(b)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(m + 1): dp[i][0] = i
+    for j in range(n + 1): dp[0][j] = j
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+            else:
+                dp[i][j] = 1 + min(dp[i - 1][j],      # delete
+                                   dp[i][j - 1],      # insert
+                                   dp[i - 1][j - 1])  # replace
+    return dp[m][n]
+
+def can_partition(nums: list[int]) -> bool:           # 0/1 knapsack, 1-D rolling
+    total = sum(nums)
+    if total % 2:
+        return False
+    target = total // 2
+    dp = [True] + [False] * target
+    for x in nums:
+        for s in range(target, x - 1, -1):            # BACKWARDS: each item used once
+            dp[s] = dp[s] or dp[s - x]
+    return dp[target]
+
+def change_ways(amount: int, coins: list[int]) -> int: # unbounded knapsack, count combos
+    dp = [1] + [0] * amount
+    for c in coins:                                    # coins outer -> combinations, not permutations
+        for s in range(c, amount + 1):                 # FORWARDS: reuse allowed
+            dp[s] += dp[s - c]
+    return dp[amount]
+`),
+      cs(['`range(target, x - 1, -1)` iterates backwards (C# `for (s = target; s >= x; s--)`).', 'Booleans are ints: `sum([True, True]) == 2`.']),
+      vars(['0/1 knapsack iterates capacity **backwards**; unbounded iterates **forwards**.', 'Coin Change II: coins in the outer loop counts combinations; amount outer counts permutations.', 'Target Sum reduces to subset sum: `(total + target) / 2` (check parity and bounds).', 'Off-by-one between string index and dp index — use a leading empty row/column.', 'Space optimise to two rows (or one) once the 2-D version is correct.']),
+      probs([
+        p('Unique Paths', 'unique-paths', M, 1), p('Minimum Path Sum', 'minimum-path-sum', M, 0), p('Longest Common Subsequence', 'longest-common-subsequence', M, 1),
+        p('Partition Equal Subset Sum', 'partition-equal-subset-sum', M, 1), p('Coin Change II', 'coin-change-ii', M, 1), p('Target Sum', 'target-sum', M, 1),
+        p('Edit Distance', 'edit-distance', M, 1), p('Interleaving String', 'interleaving-string', M, 1),
+        p('Best Time to Buy and Sell Stock with Cooldown', 'best-time-to-buy-and-sell-stock-with-cooldown', M, 1), p('Maximal Square', 'maximal-square', M, 0),
+        p('Longest Increasing Path in a Matrix', 'longest-increasing-path-in-a-matrix', H, 1), p('Regular Expression Matching', 'regular-expression-matching', H, 1),
+        p('Burst Balloons', 'burst-balloons', H, 1)
+      ]),
+      quiz([
+        ['0/1 knapsack with a 1-D array: iterate capacity…', ['Forwards', 'Backwards', 'Either', 'Randomly'], 1, 'Backwards ensures dp[s − x] still refers to the previous item row.'],
+        ['Edit distance when characters differ: dp[i][j] = 1 + min of…', ['dp[i−1][j], dp[i][j−1], dp[i−1][j−1]', 'dp[i−1][j−1] only', 'dp[i][j−1] only', 'dp[i+1][j+1]'], 0, 'Delete, insert, replace.'],
+        ['Maximal Square transition?', ['dp = max of neighbours', 'dp[i][j] = 1 + min(up, left, diag) when cell is 1', 'dp = sum of row', 'dp = up + left'], 1, 'A square of size k needs squares of size k−1 in all three directions.'],
+        ['Longest Increasing Path in a Matrix is best solved by…', ['Bottom-up table in row order', 'DFS + memoisation (or topological sort by value)', 'BFS from (0,0)', 'Greedy'], 1, 'No natural row order; memoised DFS works because strictly increasing paths cannot cycle.']
+      ])
+    ]),
+
+    // ───────────── 17
+    pat('Greedy', 'Make the locally best choice and prove it never hurts (exchange argument). Usually O(n) or O(n log n) with sorting.', [
+      steps('Jump Game on [2, 3, 1, 1, 4] — track the farthest reachable index', ['i', 'nums[i]', 'i ≤ farthest?', 'farthest = max(farthest, i + nums[i])'], [
+        ['0', '2', 'yes (0)', '2'], ['1', '3', 'yes (2)', '4 ≥ last index → true ✔']
+      ]),
+      vis('Is greedy safe here?', `
+flowchart TD
+  A["Local choice idea"] --> B{"Exchange argument:<br/>swap an optimal solution's choice<br/>for the greedy one — still optimal?"}
+  B -->|yes| G["Greedy O(n) / O(n log n)"]
+  B -->|"no / counter-example"| D["Use DP"]
+`, 'Always try to break your greedy with a small counter-example before coding.'),
+      cues(['"Maximum subarray", "can you reach the end", "minimum jumps"', '"Assign / schedule" with an obvious sort key (end time, deadline, ratio)', '"Gas station", "partition labels", "hand of straights"', 'Problem feels like DP but each step has a dominant choice', 'Constraints up to 10⁵–10⁶ (DP O(n²) would be too slow)']),
+      tmpl(`
+def max_subarray(nums: list[int]) -> int:          # Kadane
+    best = cur = nums[0]
+    for x in nums[1:]:
+        cur = max(x, cur + x)                       # extend or restart
+        best = max(best, cur)
+    return best
+
+def can_jump(nums: list[int]) -> bool:
+    farthest = 0
+    for i, x in enumerate(nums):
+        if i > farthest:
+            return False
+        farthest = max(farthest, i + x)
+    return True
+
+def min_jumps(nums: list[int]) -> int:              # BFS by levels, greedy window
+    jumps = cur_end = farthest = 0
+    for i in range(len(nums) - 1):
+        farthest = max(farthest, i + nums[i])
+        if i == cur_end:
+            jumps += 1
+            cur_end = farthest
+    return jumps
+
+def can_complete_circuit(gas: list[int], cost: list[int]) -> int:
+    if sum(gas) < sum(cost):
+        return -1
+    tank = start = 0
+    for i in range(len(gas)):
+        tank += gas[i] - cost[i]
+        if tank < 0:
+            start, tank = i + 1, 0                  # no station in [start, i] can work
+    return start
+
+def partition_labels(s: str) -> list[int]:
+    last = {ch: i for i, ch in enumerate(s)}
+    res, start, end = [], 0, 0
+    for i, ch in enumerate(s):
+        end = max(end, last[ch])
+        if i == end:
+            res.append(end - start + 1)
+            start = i + 1
+    return res
+`),
+      cs(['Dict comprehension `{ch: i for i, ch in enumerate(s)}` — later indices overwrite earlier ones, giving the last occurrence.', '`nums[1:]` makes a copy (O(n) memory); iterate indices if memory matters.']),
+      vars(['Using greedy where DP is needed (coin change with arbitrary coins).', 'Kadane with all negatives: initialise with `nums[0]`, not 0.', 'Hand of Straights: sort + Counter; always start groups from the smallest remaining card.', 'Valid Parenthesis String: track a range [lo, hi] of possible open counts.', 'Be ready to justify the greedy choice in one sentence.']),
+      probs([
+        p('Maximum Subarray', 'maximum-subarray', M, 1), p('Jump Game', 'jump-game', M, 1), p('Jump Game II', 'jump-game-ii', M, 1),
+        p('Gas Station', 'gas-station', M, 1), p('Hand of Straights', 'hand-of-straights', M, 1), p('Partition Labels', 'partition-labels', M, 1),
+        p('Valid Parenthesis String', 'valid-parenthesis-string', M, 1)
+      ]),
+      quiz([
+        ['Kadane\'s algorithm decision at each element?', ['Sort first', 'Extend the current subarray or start fresh at x', 'Binary search', 'Push to a heap'], 1, 'cur = max(x, cur + x).'],
+        ['Gas Station: if total gas < total cost…', ['Start at 0', 'Return −1 — impossible from any start', 'Start at the max gas', 'Retry'], 1, 'Otherwise a unique valid start exists and the reset trick finds it.'],
+        ['How do you justify a greedy algorithm?', ['It passes the examples', 'Exchange argument / stays-ahead proof', 'It is fast', 'Interviewers don\'t ask'], 1, 'Show any optimal solution can be transformed to the greedy one without getting worse.'],
+        ['Jump Game II (min jumps) is essentially…', ['DFS', 'BFS over index ranges (levels)', 'DP O(n²) only', 'Union-Find'], 1, 'Each jump expands the reachable window; count windows.']
+      ])
+    ]),
+
+    // ───────────── 18
+    pat('Design Data Structures (LRU, LFU, etc.)', 'Combine primitives so every operation hits the target complexity — usually hash map + linked list / array / heap.', [
+      vis('LRU cache = hash map + doubly linked list', `
+flowchart LR
+  subgraph Map["dict: key → node"]
+    K1["k=1"] ; K2["k=2"] ; K3["k=3"]
+  end
+  H["head<br/>(sentinel)"] <--> N3["3: c<br/>most recent"] <--> N1["1: a"] <--> N2["2: b<br/>least recent"] <--> T["tail<br/>(sentinel)"]
+  K1 -.-> N1
+  K2 -.-> N2
+  K3 -.-> N3
+`, 'get: map lookup O(1), move node to front. put: insert at front; if over capacity, remove node before tail and its key.'),
+      steps('LRU capacity 2: put(1), put(2), get(1), put(3), get(2)', ['Op', 'List (recent → old)', 'Result'], [
+        ['put(1,a)', '[1]', '—'], ['put(2,b)', '[2, 1]', '—'], ['get(1)', '[1, 2]', 'a'], ['put(3,c)', '[3, 1] (evict 2)', '—'], ['get(2)', '[3, 1]', '−1 ✔']
+      ]),
+      cues(['"Design a class with methods …, each in O(1) (average)"', '"Least recently / frequently used", "evict"', '"Get random element in O(1)"', '"Hit counter", "rate limiter", "history back/forward"', '"Snapshot / versioned values"']),
+      tmpl(`
+from collections import OrderedDict
+import random
+
+class LRUCache:                                   # OrderedDict version (say you know the DLL one)
+    def __init__(self, capacity: int):
+        self.cap, self.data = capacity, OrderedDict()
+    def get(self, key: int) -> int:
+        if key not in self.data:
+            return -1
+        self.data.move_to_end(key)                # mark most recent
+        return self.data[key]
+    def put(self, key: int, value: int) -> None:
+        self.data[key] = value
+        self.data.move_to_end(key)
+        if len(self.data) > self.cap:
+            self.data.popitem(last=False)         # evict least recent
+
+class Node:
+    __slots__ = ('key', 'val', 'prev', 'next')
+    def __init__(self, key=0, val=0):
+        self.key, self.val, self.prev, self.next = key, val, None, None
+
+class LRUCacheDLL:
+    def __init__(self, capacity: int):
+        self.cap, self.map = capacity, {}
+        self.head, self.tail = Node(), Node()     # sentinels
+        self.head.next, self.tail.prev = self.tail, self.head
+    def _remove(self, n: Node) -> None:
+        n.prev.next, n.next.prev = n.next, n.prev
+    def _add_front(self, n: Node) -> None:
+        n.prev, n.next = self.head, self.head.next
+        self.head.next.prev = n
+        self.head.next = n
+    def get(self, key: int) -> int:
+        if key not in self.map:
+            return -1
+        n = self.map[key]
+        self._remove(n); self._add_front(n)
+        return n.val
+    def put(self, key: int, value: int) -> None:
+        if key in self.map:
+            self._remove(self.map[key])
+        n = self.map[key] = Node(key, value)
+        self._add_front(n)
+        if len(self.map) > self.cap:
+            lru = self.tail.prev
+            self._remove(lru)
+            del self.map[lru.key]
+
+class RandomizedSet:                              # array + index map, swap-with-last delete
+    def __init__(self):
+        self.vals, self.pos = [], {}
+    def insert(self, x: int) -> bool:
+        if x in self.pos: return False
+        self.pos[x] = len(self.vals); self.vals.append(x); return True
+    def remove(self, x: int) -> bool:
+        if x not in self.pos: return False
+        i, last = self.pos[x], self.vals[-1]
+        self.vals[i], self.pos[last] = last, i
+        self.vals.pop(); del self.pos[x]; return True
+    def getRandom(self) -> int:
+        return random.choice(self.vals)
+`),
+      cs(['`OrderedDict.move_to_end` / `popitem(last=False)` give LRU in a few lines; interviewers often ask for the manual DLL too.', '`__slots__` reduces per-object memory (no per-instance `__dict__`).']),
+      vars(['Forgetting to delete the evicted key from the map.', 'Not updating recency on `put` of an existing key.', 'LFU: map key → node, map freq → OrderedDict of keys, track `min_freq`; reset min_freq to 1 on insert.', 'RandomizedSet remove: swap with last, update the moved element\'s index BEFORE popping.', 'Snapshot Array: per index store list of (snap_id, value) and binary search.']),
+      probs([
+        p('Design HashMap', 'design-hashmap', E, 0),
+        p('LRU Cache', 'lru-cache', M, 1), p('Insert Delete GetRandom O(1)', 'insert-delete-getrandom-o1', M, 0), p('Design Hit Counter', 'design-hit-counter', M, 0, 1),
+        p('Design Browser History', 'design-browser-history', M, 0), p('Snapshot Array', 'snapshot-array', M, 0),
+        p('LFU Cache', 'lfu-cache', H, 0), p('All O`one Data Structure', 'all-oone-data-structure', H, 0)
+      ]),
+      quiz([
+        ['Why a doubly (not singly) linked list for LRU?', ['Less memory', 'O(1) removal of an arbitrary node given a pointer to it', 'Easier to sort', 'Required by Python'], 1, 'You need the predecessor to unlink in O(1).'],
+        ['Why store the key inside each LRU node?', ['Debugging', 'On eviction you must delete the key from the hash map', 'Sorting', 'Hashing'], 1, 'The tail node tells you which map entry to remove.'],
+        ['Insert Delete GetRandom O(1): how is remove O(1)?', ['Linked list', 'Swap the element with the last one, then pop', 'Mark as deleted', 'Rebuild'], 1, 'Array pop from the end is O(1); the index map is updated for the moved element.'],
+        ['LFU Cache: on a tie in frequency, evict…', ['Random', 'The least recently used among the least frequent', 'The newest', 'The largest key'], 1, 'Hence an ordered structure per frequency bucket.']
+      ])
+    ]),
+
+    checkpoint(18, [
+      ['Design a data structure that returns the maximum element in a sliding window of size k as numbers stream in.', ['Monotonic deque (stack/queue pattern)', 'Heap only', 'Trie', 'Union-Find'], 0, 'Deque of indices with decreasing values; pop expired indices from the front.'],
+      ['Maximum profit from buying and selling a stock multiple times (no fees, no cooldown).', ['2-D DP required', 'Greedy: add every positive day-to-day difference', 'Binary search', 'Backtracking'], 1, 'Stock II: sum of all rises is optimal.'],
+      ['Number of distinct ways to make amount with unlimited coins (order doesn\'t matter).', ['Greedy', '2-D DP (unbounded knapsack)', 'Dijkstra', 'Heap'], 1, 'Coin Change II: coins outer loop, amounts inner forwards.'],
+      ['Design a system that stores values with timestamps and returns the value at or before time t.', ['Design DS: hash map + sorted list + binary search', 'Heap', 'Trie', 'Graph'], 0, 'Time-Based Key-Value Store.'],
+      ['Minimum number of intervals to remove so the rest don\'t overlap.', ['DP', 'Greedy (sort by end)', 'Backtracking', 'Union-Find'], 1, 'Classic activity-selection greedy.']
+    ]),
+
+    // ───────────── 19
+    pat('Tries', 'A prefix tree: each edge is a character, shared prefixes share nodes. Prefix queries in O(length).', [
+      vis('Trie containing "app", "apple", "bat", "bad"', `
+flowchart TB
+  R(("root")) --> A(("a")) --> P1(("p")) --> P2(("p ✓")) --> L(("l")) --> E(("e ✓"))
+  R --> B(("b")) --> A2(("a")) --> T(("t ✓"))
+  A2 --> D(("d ✓"))
+`, '✓ marks end-of-word. "ap" is a prefix but not a word.'),
+      steps('search("app") vs startsWith("ba")', ['Query', 'Path walked', 'Result'], [
+        ['search("app")', 'root → a → p → p (is_end = True)', 'true'], ['search("ap")', 'root → a → p (is_end = False)', 'false'], ['startsWith("ba")', 'root → b → a (exists)', 'true']
+      ]),
+      cues(['"Prefix", "starts with", "autocomplete", "search suggestions"', 'Many words searched against a board / stream (Word Search II)', '"Wildcard `.` matches any letter"', '"Longest common prefix", "replace words with roots"', 'Bitwise trie for "maximum XOR of two numbers"']),
+      tmpl(`
+class TrieNode:
+    __slots__ = ('children', 'is_end')
+    def __init__(self):
+        self.children: dict[str, 'TrieNode'] = {}
+        self.is_end = False
+
+class Trie:
+    def __init__(self):
+        self.root = TrieNode()
+
+    def insert(self, word: str) -> None:
+        node = self.root
+        for ch in word:
+            node = node.children.setdefault(ch, TrieNode())
+        node.is_end = True
+
+    def _walk(self, s: str) -> TrieNode | None:
+        node = self.root
+        for ch in s:
+            node = node.children.get(ch)
+            if node is None:
+                return None
+        return node
+
+    def search(self, word: str) -> bool:
+        node = self._walk(word)
+        return bool(node and node.is_end)
+
+    def startsWith(self, prefix: str) -> bool:
+        return self._walk(prefix) is not None
+
+    def search_wildcard(self, word: str) -> bool:           # '.' matches any char
+        def dfs(node: TrieNode, i: int) -> bool:
+            if i == len(word):
+                return node.is_end
+            ch = word[i]
+            if ch == '.':
+                return any(dfs(child, i + 1) for child in node.children.values())
+            nxt = node.children.get(ch)
+            return nxt is not None and dfs(nxt, i + 1)
+        return dfs(self.root, 0)
+`),
+      cs(['`dict.setdefault(k, default)` inserts and returns in one call (like `TryAdd` + indexer).', '`dict.get(k)` returns `None` instead of throwing.']),
+      vars(['Word Search II: build a trie of the words, DFS the board once; remove found words (or prune empty nodes) to avoid TLE.', 'Store the full word at the end node to avoid rebuilding strings during DFS.', 'Search Suggestions: store up to 3 sorted words per node, or sort + binary search.', 'Memory: dict children are flexible; `[None] * 26` arrays are faster for lowercase-only.']),
+      probs([
+        p('Implement Trie (Prefix Tree)', 'implement-trie-prefix-tree', M, 1), p('Design Add and Search Words Data Structure', 'design-add-and-search-words-data-structure', M, 1),
+        p('Search Suggestions System', 'search-suggestions-system', M, 0), p('Word Search II', 'word-search-ii', H, 1)
+      ]),
+      quiz([
+        ['Time to insert or search a word of length L in a trie?', ['O(log n)', 'O(L)', 'O(n)', 'O(L log n)'], 1, 'Independent of how many words are stored.'],
+        ['Why use a trie in Word Search II rather than running Word Search per word?', ['Less code', 'One board DFS checks all words sharing prefixes; prune dead prefixes early', 'Uses less memory always', 'Required'], 1, 'Per-word search repeats the board DFS W times.'],
+        ['What does `is_end` distinguish?', ['Leaf nodes', 'Whether a complete word ends here vs only a prefix', 'Root node', 'Wildcards'], 1, '"app" and "apple": the second p is an end but not a leaf.'],
+        ['Maximum XOR of two numbers uses…', ['Character trie', 'Binary trie over bits, greedily choose the opposite bit', 'Heap', 'Sorting only'], 1, 'Walk from the highest bit, preferring the opposite bit.']
+      ])
+    ]),
+
+    // ───────────── 20
+    pat('Bit Manipulation & Math', 'Use binary representations: XOR cancels pairs, x & (x−1) drops the lowest set bit, shifts multiply/divide by 2.', [
+      steps('Single Number on [4, 1, 2, 1, 2] with XOR', ['x', 'acc (binary)', 'acc'], [
+        ['—', '000', '0'], ['4', '100', '4'], ['1', '101', '5'], ['2', '111', '7'], ['1', '110', '6'], ['2', '100', '4 ✔']
+      ]),
+      vis('Core bit identities', `
+flowchart LR
+  A["x ^ x = 0<br/>x ^ 0 = x"] --> U["pairs cancel"]
+  B["x & (x − 1)"] --> V["clears lowest set bit"]
+  C["x & −x"] --> W["isolates lowest set bit"]
+  D["(x >> i) & 1"] --> X["reads bit i"]
+  E["x | (1 << i)"] --> Y["sets bit i"]
+`, 'Memorise these five; most interview bit problems combine them.'),
+      cues(['"Every element appears twice except one"', '"Without using + or −", "without extra space"', '"Count set bits", "power of two", "reverse bits"', '"Missing number in 0..n"', 'Subsets of small n as bitmasks']),
+      tmpl(`
+def single_number(nums: list[int]) -> int:
+    acc = 0
+    for x in nums:
+        acc ^= x
+    return acc
+
+def hamming_weight(n: int) -> int:
+    count = 0
+    while n:
+        n &= n - 1                  # drop lowest set bit
+        count += 1
+    return count                    # or bin(n).count('1'), or n.bit_count() (3.10+)
+
+def counting_bits(n: int) -> list[int]:
+    dp = [0] * (n + 1)
+    for i in range(1, n + 1):
+        dp[i] = dp[i >> 1] + (i & 1)
+    return dp
+
+def missing_number(nums: list[int]) -> int:
+    acc = len(nums)
+    for i, x in enumerate(nums):
+        acc ^= i ^ x
+    return acc
+
+def get_sum(a: int, b: int) -> int:            # add without + (32-bit semantics)
+    MASK, MAX = 0xFFFFFFFF, 0x7FFFFFFF
+    while b & MASK:
+        a, b = (a ^ b) & MASK, ((a & b) << 1) & MASK
+    return a if a <= MAX else ~(a ^ MASK)      # convert back to a negative Python int
+
+def is_power_of_two(n: int) -> bool:
+    return n > 0 and n & (n - 1) == 0
+`),
+      cs(['Python ints are **arbitrary precision** — no 32-bit overflow, and negatives have infinite leading 1s. Mask with `0xFFFFFFFF` to emulate C# `int`.', '`>>` on negatives is arithmetic (floor), like C# `>>` on `int`; there is no `>>>` operator.', '`~x == -x - 1` for Python ints.']),
+      vars(['Sum of Two Integers loops forever in Python without masking (infinite-precision negatives).', 'Reverse Bits: build the result bit by bit for exactly 32 iterations.', 'Operator precedence: `n & (n - 1) == 0` parses as `n & ((n - 1) == 0)` in C#; in Python comparisons bind looser than `&`, so it works — but add parentheses anyway.', 'Missing Number: XOR or Gauss sum `n(n+1)/2 − sum(nums)`.']),
+      probs([
+        p('Single Number', 'single-number', E, 1), p('Number of 1 Bits', 'number-of-1-bits', E, 1), p('Counting Bits', 'counting-bits', E, 1),
+        p('Missing Number', 'missing-number', E, 1), p('Reverse Bits', 'reverse-bits', E, 1), p('Sum of Two Integers', 'sum-of-two-integers', M, 1)
+      ]),
+      quiz([
+        ['`x & (x − 1)` does what?', ['Doubles x', 'Clears the lowest set bit', 'Sets all bits', 'Negates x'], 1, 'Basis of counting bits and power-of-two checks.'],
+        ['Why does Sum of Two Integers need a mask in Python?', ['Performance', 'Python ints are unbounded, so negative carries never vanish', 'Syntax', 'Not needed'], 1, 'Masking to 32 bits emulates fixed-width integers.'],
+        ['Counting Bits dp[i] = ?', ['dp[i − 1] + 1', 'dp[i >> 1] + (i & 1)', 'i % 2', 'dp[i / 2] × 2'], 1, 'Shifting right drops the last bit; add it back.'],
+        ['XOR of all numbers where every value appears twice except one gives…', ['0', 'The single number', 'The sum', 'The max'], 1, 'Pairs cancel: a ^ a = 0.']
+      ])
+    ]),
+
+    checkpoint(20, [
+      ['Return all words from a dictionary that can be formed on a letter board by adjacent moves.', ['Trie + backtracking DFS', 'Heap', 'Prefix sum', 'Greedy'], 0, 'Word Search II.'],
+      ['Find the two numbers that appear exactly once when all others appear twice.', ['Hash set only', 'Bit Manipulation: XOR all, split by the lowest set bit', 'Sorting', 'DP'], 1, 'Single Number III: `diff & -diff` isolates a distinguishing bit.'],
+      ['Given n, return true if it is a power of four.', ['Bit Manipulation: power of two AND the bit is at an even position (n & 0x55555555)', 'Binary search', 'DP', 'Heap'], 0, 'Power of two check + mask of even bit positions.'],
+      ['Return the top 3 product suggestions after each typed character.', ['Trie (or sort + binary search)', 'Union-Find', 'Monotonic stack', 'Dijkstra'], 0, 'Search Suggestions System.'],
+      ['Design a structure supporting add(word) and search(pattern with "." wildcards).', ['Trie + DFS on wildcard', 'Hash set of all words, brute force', 'Heap', 'Line sweep'], 0, 'Design Add and Search Words.']
+    ], 'Final mixed set across the last patterns. After this, the optional extras: Segment/Fenwick Tree, KMP, Bitmask DP.')
+  ];
+
+  window.TRACK = {
+    key: 'B', cmd: 'B', name: 'DSA — 20 patterns, 200 questions', title: 'DSA Patterns Track', showSolved: true,
+    intro: 'Fixed order, one pattern per session. Each pattern: **(a)** visual walkthrough → **(b)** recognition cues → **(c)** Python template → **(d)** variations & mistakes → **(e)** question table (Easy → Medium → Hard) → pattern quiz. After every 3 patterns there is a checkpoint: name the pattern before you solve.\n\nThe "Asked at" column says **commonly reported** unless a company is verified — company tags change and LeetCode\'s are Premium. The "List" column marks problems that appear in NeetCode 150.',
+    otherTracks: [['Track A — FDE Core', 'track-a-fde-core.html'], ['Track C — System Design', 'track-c-system-design.html']],
+    homeBlocks: [
+      { type: 'table', h: 'Pattern → question counts', cols: ['#', 'Pattern', 'Questions'], rows: [
+        ['1', 'Arrays & Hashing', '12'], ['2', 'Two Pointers', '10'], ['3', 'Sliding Window', '12'], ['4', 'Prefix Sum', '7'], ['5', 'Binary Search (incl. on answer)', '13'],
+        ['6', 'Stack / Monotonic Stack', '11'], ['7', 'Linked List', '9'], ['8', 'Matrix / Grid', '7'], ['9', 'Trees', '17'], ['10', 'Heap / Top-K / K-way merge', '11'],
+        ['11', 'Intervals & Line Sweep', '8'], ['12', 'Backtracking', '11'], ['13', 'Graphs', '18'], ['14', 'Advanced Graphs', '5'], ['15', '1-D DP', '11'],
+        ['16', '2-D DP', '13'], ['17', 'Greedy', '7'], ['18', 'Design Data Structures', '8'], ['19', 'Tries', '4'], ['20', 'Bit Manipulation & Math', '6'], ['', '**Total**', '**200**']
+      ] },
+      { type: 'list', h: 'Optional, only after all 20', items: ['Segment Tree / Fenwick (Binary Indexed) Tree — range queries with updates', 'KMP — linear-time string matching (prefix function)', 'Bitmask DP — state = subset of ≤ 20 items (e.g. travelling salesman)'] },
+      { type: 'list', h: 'How to submit code to the tutor', items: ['Paste your Python solution and say which problem.', 'I check correctness, edge cases and complexity, show the optimal version, and name the cue you should have spotted.', 'Use HINT for one hint at a time; SOLUTION only when you are done trying.'] }
+    ],
+    items
+  };
+  window.TRACK.patternNames = P;
+})();

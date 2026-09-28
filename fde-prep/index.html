@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FDE Interview Prep</title>
+<style>
+:root { --bg:#f6f6f3; --surface:#fff; --text:#1c1c1e; --muted:#62646a; --border:#e0e0da; --accent:#2c55d6; --good:#17784a; --track:#f0f0ec; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#121315; --surface:#1b1c1f; --text:#ececee; --muted:#a0a2a8; --border:#303137; --accent:#8aa8ff; --good:#6fd39b; --track:#232428; color-scheme: dark; } }
+:root[data-theme="dark"] { --bg:#121315; --surface:#1b1c1f; --text:#ececee; --muted:#a0a2a8; --border:#303137; --accent:#8aa8ff; --good:#6fd39b; --track:#232428; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+main { max-width: 880px; margin: 0 auto; padding: 40px 16px 60px; }
+h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+p.lead { color: var(--muted); margin: 0 0 28px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+a.card { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; color: var(--text); text-decoration: none; }
+a.card:hover { border-color: var(--accent); }
+.badge { display: inline-block; background: var(--accent); color: var(--surface); border-radius: 6px; padding: 1px 8px; font-weight: 700; font-size: 13px; }
+.card h2 { font-size: 18px; margin: 10px 0 4px; }
+.card p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.bar { height: 6px; background: var(--track); border-radius: 99px; overflow: hidden; }
+.bar span { display: block; height: 100%; width: 0; background: var(--good); }
+.meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.how { margin-top: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+.how h3 { margin: 0 0 8px; font-size: 16px; }
+.how ol { margin: 0; padding-left: 20px; }
+code { background: var(--track); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>FDE Interview Prep</h1>
+  <p class="lead">Three fixed learning paths. One module per session, visual first, quiz at the end of every module.</p>
+  <div class="grid">
+    <a class="card" href="track-a-fde-core.html" data-key="A" data-total="10">
+      <span class="badge">A</span><h2>FDE Core</h2>
+      <p>Discovery → Python → integration → data → LLM engineering → evals → safety → deployment → communication → case studies.</p>
+      <div class="bar"><span></span></div><div class="meta"></div>
+    </a>
+    <a class="card" href="track-b-dsa.html" data-key="B" data-total="20">
+      <span class="badge">B</span><h2>DSA</h2>
+      <p>20 patterns, 200 questions, Python templates, pattern quizzes and "name the pattern" checkpoints.</p>
+      <div class="bar"><span></span></div><div class="meta"></div>
+    </a>
+    <a class="card" href="track-c-system-design.html" data-key="C" data-total="34">
+      <span class="badge">C</span><h2>System Design</h2>
+      <p>8 fundamentals, 14 classic designs, 12 AI / LLM designs — each in the same 8-step interview structure.</p>
+      <div class="bar"><span></span></div><div class="meta"></div>
+    </a>
+  </div>
+  <div class="how">
+    <h3>How a session works</h3>
+    <ol>
+      <li>Tell the tutor <code>START: A 1</code> (or <code>B</code> / <code>C</code> + module number), or paste your PROGRESS block.</li>
+      <li>Work the module here alongside the session: visual, explanation, example, task, quiz.</li>
+      <li>Click <b>Mark module done</b>, note what felt shaky, then copy the PROGRESS block for next time.</li>
+    </ol>
+  </div>
+</main>
+<script>
+document.querySelectorAll('a.card').forEach(function (card) {
+  var s = {};
+  try { s = JSON.parse(localStorage.getItem('fdeprep:' + card.dataset.key) || '{}') || {}; } catch (e) {}
+  var done = Object.keys(s.done || {}).length, total = +card.dataset.total;
+  var solved = Object.keys(s.solved || {}).length;
+  card.querySelector('.bar span').style.width = Math.round(100 * done / total) + '%';
+  card.querySelector('.meta').textContent = done + ' / ' + total + ' modules' + (card.dataset.key === 'B' ? ' · ' + solved + ' / 200 problems' : '');
+});
+try { var t = localStorage.getItem('fdeprep:theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+</body>
+</html>
